@@ -260,7 +260,14 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return players;
   }
 
+  async function clearQueue(queueId) {
+    await maCommand("player_queues/clear", { queue_id: queueId });
+    return true;
+  }
+
+  // Play now: empty the current queue on the chosen player, then play the track.
   async function playTrack(queueId, trackUri) {
+    await clearQueue(queueId);
     await maCommand("player_queues/play_media", {
       queue_id: queueId,
       media: trackUri
@@ -331,6 +338,7 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     maCommand,
     searchTrack,
     listPlayers,
+    clearQueue,
     playTrack,
     resolveQueueId,
     checkAvailability,
@@ -347,6 +355,7 @@ module.exports = {
   getStatus: () => defaultClient.getStatus(),
   searchTrack: (artist, track) => defaultClient.searchTrack(artist, track),
   listPlayers: () => defaultClient.listPlayers(),
+  clearQueue: queueId => defaultClient.clearQueue(queueId),
   playTrack: (queueId, uri) => defaultClient.playTrack(queueId, uri),
   resolveQueueId: queueId => defaultClient.resolveQueueId(queueId),
   checkAvailability: tracks => defaultClient.checkAvailability(tracks)

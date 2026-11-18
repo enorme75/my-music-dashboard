@@ -222,7 +222,7 @@ test("searchTrack caches results per normalized artist/track", async () => {
   assert.equal(calls, 1);
 });
 
-test("playTrack posts player_queues/play_media with queue_id and media uri", async () => {
+test("playTrack clears the queue first, then posts player_queues/play_media", async () => {
   setupEnv();
   const calls = [];
   const client = clientWith(async (url, payload) => {
@@ -231,9 +231,11 @@ test("playTrack posts player_queues/play_media with queue_id and media uri", asy
   });
 
   assert.equal(await client.playTrack("queue-1", "library://track/2"), true);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].command, "player_queues/play_media");
-  assert.deepEqual(calls[0].args, { queue_id: "queue-1", media: "library://track/2" });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].command, "player_queues/clear");
+  assert.deepEqual(calls[0].args, { queue_id: "queue-1" });
+  assert.equal(calls[1].command, "player_queues/play_media");
+  assert.deepEqual(calls[1].args, { queue_id: "queue-1", media: "library://track/2" });
 });
 
 test("MA error payloads become MusicAssistantError with code and 502", async () => {
