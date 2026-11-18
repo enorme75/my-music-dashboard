@@ -1,6 +1,7 @@
 import { fetchJSON } from "./api.js";
 import { t } from "./i18n.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 
 let currentQuery = null;
 let loadId = 0;
@@ -82,6 +83,7 @@ function renderTracks(tracks) {
         >
           <i class="mdi mdi-open-in-new"></i>
         </a>
+        ${playButtonHtml(row.artist, row.track)}
         <small>
           ${escapeHTML(row.artist)} · ${Number(row.plays || 0).toLocaleString()} ${escapeHTML(t("common.playsUnit"))}
         </small>

@@ -47,6 +47,7 @@ const {
   generateShareImage,
   ShareGenerationBusyError
 } = require("./services/shareGenerator");
+const ma = require("./services/musicAssistant");
 
 const app = express();
 const PORT = Math.max(1, Number(process.env.PORT) || 1533);
@@ -65,6 +66,37 @@ function asyncRoute(handler) {
 
 function setNoStore(res) {
   res.set("Cache-Control", "no-store");
+}
+
+const PLAY_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const PLAY_RATE_LIMIT_MAX = 30;
+const playRateLimitHits = new Map();
+
+function checkPlayRateLimit(req) {
+  const now = Date.now();
+  const key = req.ip || req.socket?.remoteAddress || "unknown";
+  const hits = (playRateLimitHits.get(key) || []).filter(ts => now - ts < PLAY_RATE_LIMIT_WINDOW_MS);
+  if (hits.length >= PLAY_RATE_LIMIT_MAX) {
+    playRateLimitHits.set(key, hits);
+    return false;
+  }
+  hits.push(now);
+  playRateLimitHits.set(key, hits);
+  return true;
+}
+
+function parsePlayBody(body) {
+  const artist = String(body?.artist || "").trim();
+  const track = String(body?.track || "").trim();
+  const queueId = String(body?.queue_id || "").trim();
+
+  if (!artist || !track || artist.length > 200 || track.length > 200) {
+    const error = new Error("artist and track are required (max 200 characters each)");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return { artist, track, queueId };
 }
 
 function getUploadErrorMessage(error) {
@@ -742,6 +774,71 @@ app.get("/api/leaderboards/groups/:groupId/details", asyncRoute(async (req, res)
   res.json(await getLeaderboardItemDetails(req.params.groupId, req.query));
 }));
 
+app.get("/api/player/status", asyncRoute(async (req, res) => {
+  setNoStore(res);
+  res.json(await ma.getStatus());
+}));
+
+app.post("/api/play", asyncRoute(async (req, res) => {
+  setNoStore(res);
+
+  if (!checkPlayRateLimit(req)) {
+    return res.status(429).json({ error: "Too many play requests, slow down", code: "rate_limited" });
+  }
+
+  const { artist, track, queueId } = parsePlayBody(req.body);
+
+  if (!ma.isConfigured()) {
+    return res.status(503).json({
+      error: "Music Assistant is not configured (set MA_API_URL and MA_TOKEN)",
+      code: "not_configured"
+    });
+  }
+
+  const match = await ma.searchTrack(artist, track);
+  if (!match) {
+    return res.status(404).json({
+      error: "Track not found in Music Assistant library",
+      code: "not_found"
+    });
+  }
+
+  const resolvedQueueId = ma.resolveQueueId(queueId);
+  await ma.playTrack(resolvedQueueId, match.uri);
+
+  const players = await ma.listPlayers().catch(() => []);
+  const player = players.find(entry => entry.queue_id === resolvedQueueId);
+
+  res.json({
+    ok: true,
+    track: match,
+    queue_id: resolvedQueueId,
+    player_name: player?.name || resolvedQueueId
+  });
+}));
+
+app.post("/api/play/availability", asyncRoute(async (req, res) => {
+  setNoStore(res);
+
+  if (!checkPlayRateLimit(req)) {
+    return res.status(429).json({ error: "Too many requests, slow down", code: "rate_limited" });
+  }
+
+  if (!ma.isConfigured()) {
+    return res.json({ configured: false, results: {} });
+  }
+
+  const rawTracks = Array.isArray(req.body?.tracks) ? req.body.tracks : [];
+  const tracks = rawTracks
+    .map(entry => ({
+      artist: String(entry?.artist || "").trim(),
+      track: String(entry?.track || "").trim()
+    }))
+    .filter(entry => entry.artist && entry.track && entry.artist.length <= 200 && entry.track.length <= 200);
+
+  res.json({ configured: true, results: await ma.checkAvailability(tracks) });
+}));
+
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
 
@@ -751,7 +848,10 @@ app.use((error, req, res, next) => {
     ? parsedStatus
     : 500;
   const message = status >= 500 ? "Internal server error" : error.message;
-  res.status(status).json({ error: message });
+  res.status(status).json({
+    error: message,
+    ...(error.code ? { code: String(error.code) } : {})
+  });
 });
 
 let server;

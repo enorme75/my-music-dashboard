@@ -2077,6 +2077,100 @@ strong {
   opacity: 0.8;
 }
 
+.play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  margin-left: 6px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  opacity: 0.55;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.play-btn:hover,
+.play-btn:focus-visible {
+  opacity: 1;
+  color: var(--brand-orange);
+}
+
+.play-btn:focus-visible {
+  outline: 2px solid var(--brand-orange-alpha);
+  outline-offset: 1px;
+}
+
+.play-btn .mdi {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.play-btn-lg {
+  width: 40px;
+  height: 40px;
+  margin-left: 10px;
+  background: var(--brand-orange);
+  color: #fff;
+  opacity: 1;
+}
+
+.play-btn-lg .mdi {
+  font-size: 1.5rem;
+}
+
+.play-btn-lg:hover,
+.play-btn-lg:focus-visible {
+  color: #fff;
+  background: var(--brand-orange);
+  filter: brightness(1.12);
+}
+
+.play-btn.is-playing {
+  color: var(--bs-success, #198754);
+  opacity: 1;
+}
+
+.play-btn.is-playing.play-btn-lg {
+  background: var(--bs-success, #198754);
+  color: #fff;
+  filter: none;
+}
+
+.play-btn.is-disabled,
+.play-btn.is-disabled:hover {
+  opacity: 0.25;
+  color: inherit;
+  cursor: not-allowed;
+}
+
+.track-play-btn {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.sidebar-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+}
+
+.sidebar-player > .mdi {
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+
+.sidebar-player .filter-select {
+  flex: 1;
+  min-width: 0;
+}
+
 .album-title-link,
 .album-artist-link {
   display: block;

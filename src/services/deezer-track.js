@@ -1,22 +1,10 @@
 const axios = require("axios");
 const { fetchWithRetry } = require("../utils/fetchRetry");
 const { normalizeImageUrl } = require("../utils/lastfmImage");
+const { normalize, isReasonableMatch } = require("../utils/normalizeText");
 
 const DEEZER_SEARCH_URL = "https://api.deezer.com/search/track";
 const REQUEST_TIMEOUT = Number(process.env.IMAGE_REQUEST_TIMEOUT_MS || 10000);
-
-const normalize = value => String(value || "")
-  .normalize("NFKD")
-  .replace(/[\u0300-\u036f]/g, "")
-  .replace(/\b(remaster(?:ed)?|deluxe|edition|version|explicit|clean|live)\b/gi, " ")
-  .replace(/[^a-z0-9]+/gi, " ")
-  .trim()
-  .toLocaleLowerCase();
-
-function isReasonableMatch(actual, expected) {
-  if (!actual || !expected) return false;
-  return actual === expected || actual.includes(expected) || expected.includes(actual);
-}
 
 async function getDeezerTrackImage(artist, track) {
   try {

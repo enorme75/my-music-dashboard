@@ -82,6 +82,16 @@
                 </div>
 
                 <div class="sidebar-bottom">
+                    <div id="ma-player-wrapper" class="sidebar-player d-none">
+                        <i class="mdi mdi-speaker"></i>
+                        <select
+                            id="ma-player-select"
+                            class="filter-select"
+                            data-i18n-title="player.selectPlayer"
+                            title="Lecteur Music Assistant"
+                            aria-label="Lecteur Music Assistant"
+                        ></select>
+                    </div>
                     <button id="locale-toggle" class="sidebar-link" type="button" title="English / Français">
                         <i class="mdi mdi-translate"></i> <span id="locale-toggle-label">EN</span>
                     </button>
@@ -685,6 +695,7 @@
                                 <i class="mdi mdi-open-in-new"></i>
                                 <span data-i18n="dashboard.openTrackOnLastfm">Ouvrir le morceau sur Last.fm</span>
                             </a>
+                            <span id="track-play-btn" class="track-play-btn"></span>
                         </div>
                     </div>
 

@@ -33,6 +33,7 @@ import { loadAlbum, showAlbum, getCurrentAlbum } from "./albumPage.js";
 import { loadSearch, showSearch, getCurrentSearch } from "./search.js";
 import { loadTrack, showTrack, getCurrentTrack } from "./trackPage.js";
 import { initLightbox } from "./lightbox.js";
+import { initPlayer } from "./player.js";
 
 const UI = {
   loading: document.getElementById("global-loading"),
@@ -531,7 +532,7 @@ function initArtistRouting() {
     const trackTarget = event.target.closest("[data-track-artist]");
     const trackArtist = trackTarget?.dataset?.trackArtist;
     const trackName = trackTarget?.dataset?.trackName;
-    if (trackArtist && trackName && !event.target.closest("a[href]")) {
+    if (trackArtist && trackName && !event.target.closest("a[href]") && !event.target.closest(".play-btn")) {
       document.querySelectorAll(".modal.show").forEach(modal => {
         window.bootstrap?.getInstance(modal)?.hide();
       });
@@ -618,6 +619,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLocaleToggle();
   initArtistRouting();
   initLightbox();
+  initPlayer();
 
   const trackFromHash = parseTrackHash();
   const albumFromHash = parseAlbumHash();

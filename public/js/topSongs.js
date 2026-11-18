@@ -1,6 +1,7 @@
 import { t } from "./i18n.js";
 import { renderCover, initCoverUploads } from "./coverUploader.js";
 import { escapeAttribute, escapeHTML } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 
 function formatDuration(totalSeconds) {
   const secondsValue = Number(totalSeconds) || 0;
@@ -33,6 +34,7 @@ function songCopy(row) {
       >
         <i class="mdi mdi-open-in-new"></i>
       </a>
+      ${playButtonHtml(row.artist, row.track)}
       <a
         class="music-link song-artist"
         data-artist="${escapeAttribute(row.artist)}"

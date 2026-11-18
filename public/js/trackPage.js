@@ -2,6 +2,7 @@ import { fetchJSON } from "./api.js";
 import { t } from "./i18n.js";
 import { formatTimestampDate, formatTimestampDateTime } from "./dates.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 
 let currentTrack = null;
 let loadId = 0;
@@ -27,6 +28,9 @@ function showLoadingState() {
 
   const note = document.getElementById("track-scrobble-note");
   note?.classList.add("d-none");
+
+  const playSlot = document.getElementById("track-play-btn");
+  if (playSlot) playSlot.innerHTML = "";
 
   const image = document.getElementById("track-image");
   if (image) image.src = "/images/cover-placeholder.svg";
@@ -120,6 +124,9 @@ function renderTrackPage(data) {
       lastfmLink.classList.add("d-none");
     }
   }
+
+  const playSlot = document.getElementById("track-play-btn");
+  if (playSlot) playSlot.innerHTML = playButtonHtml(data.artist, data.track, { large: true });
 
   renderScrobbles(data);
 }

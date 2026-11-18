@@ -2,6 +2,7 @@ import { fetchJSON } from "./api.js";
 import { t } from "./i18n.js";
 import { formatTimestampDate } from "./dates.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 
 let currentAlbum = null;
 let loadId = 0;
@@ -118,6 +119,7 @@ function renderDiscogsTracklist(data) {
           >
             <i class="mdi mdi-open-in-new"></i>
           </a>
+          ${playButtonHtml(data.artist, local.best.track)}
           <small>${Number(local.plays || 0).toLocaleString()} ${escapeHTML(t("common.playsUnit"))}</small>
         </div>
       </div>
@@ -148,6 +150,7 @@ function renderTracks(data) {
         >
           <i class="mdi mdi-open-in-new"></i>
         </a>
+        ${playButtonHtml(data.artist, row.track)}
         <small>${Number(row.plays || 0).toLocaleString()} ${escapeHTML(t("common.playsUnit"))}</small>
       </div>
     </div>

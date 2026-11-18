@@ -27,6 +27,24 @@ const DICTIONARY = {
     daysPlural: { fr: "jours", en: "days" },
     viewImage: { fr: "Voir l'image en grand", en: "View large image" }
   },
+  player: {
+    play: { fr: "Écouter sur Music Assistant", en: "Play on Music Assistant" },
+    nowPlayingOn: { fr: "Lecture lancée sur {player}", en: "Playback started on {player}" },
+    notInLibrary: {
+      fr: "Morceau absent de la bibliothèque Music Assistant",
+      en: "Track not in the Music Assistant library"
+    },
+    notConfigured: {
+      fr: "Music Assistant n'est pas configuré (MA_API_URL / MA_TOKEN)",
+      en: "Music Assistant is not configured (MA_API_URL / MA_TOKEN)"
+    },
+    error: { fr: "Échec de la lecture via Music Assistant", en: "Playback via Music Assistant failed" },
+    selectPlayer: { fr: "Lecteur Music Assistant", en: "Music Assistant player" },
+    queueRequired: {
+      fr: "Sélectionne d'abord un lecteur Music Assistant",
+      en: "Select a Music Assistant player first"
+    }
+  },
   dashboard: {
     sync: { fr: "Synchroniser", en: "Sync" },
     syncing: { fr: "En cours", en: "Syncing" },
