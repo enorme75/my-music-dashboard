@@ -6,7 +6,7 @@ const { normalize, isReasonableMatch } = require("../utils/normalizeText");
 const DEFAULT_REQUEST_TIMEOUT_MS = 8000;
 const DEFAULT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_PLAYERS_CACHE_TTL_MS = 60 * 1000;
-const MAX_SEARCH_LIMIT = 25;
+const MAX_SEARCH_LIMIT = 50;
 const MAX_AVAILABILITY_TRACKS = 200;
 
 class MusicAssistantError extends Error {
@@ -101,6 +101,7 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
   }
 
   function isLibraryTrack(item) {
+    if (String(item?.provider || "").toLowerCase() === "library") return true;
     const uri = String(item?.uri || "");
     if (uri.startsWith("library://track/")) return true;
     const mappings = Array.isArray(item?.provider_mappings) ? item.provider_mappings : [];
@@ -126,46 +127,88 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     };
   }
 
+  function matchesQuery(item, expectedArtist, expectedTrack) {
+    const itemTitle = normalize(item?.name || item?.title || "");
+    const itemArtist = normalize(trackArtists(item).join(" "));
+    if (!itemTitle || !isReasonableMatch(itemTitle, expectedTrack)) return false;
+    if (expectedArtist && itemArtist && !isReasonableMatch(itemArtist, expectedArtist)) return false;
+    return true;
+  }
+
+  function scoreItem(item, expectedArtist, expectedTrack) {
+    const itemTitle = normalize(item?.name || item?.title || "");
+    const itemArtist = normalize(trackArtists(item).join(" "));
+    let score = 0;
+    if (itemTitle === expectedTrack) score += 2;
+    else score += 1;
+    if (itemArtist && itemArtist === expectedArtist) score += 2;
+    else if (expectedArtist && itemArtist) score += 1;
+    // Prefer the studio edition over live/remaster/deluxe variants.
+    if (/\b(live|remaster(?:ed)?|deluxe|edition|version|explicit|clean)\b/i.test(String(item?.name || item?.title || ""))) {
+      score -= 1;
+    }
+    return score;
+  }
+
   async function searchTrack(artist, track) {
     const cacheKey = `${normalize(artist)} ${normalize(track)}`;
     const cached = searchCache.get(cacheKey);
     if (cached && cached.expiresAt > now()) return cached.value;
 
-    const result = await maCommand("music/search", {
-      search_query: `${artist} ${track}`,
-      limit: MAX_SEARCH_LIMIT
-    });
-    const items = Array.isArray(result?.tracks) ? result.tracks : [];
-
     const expectedArtist = normalize(artist);
     const expectedTrack = normalize(track);
-    let best = null;
-    let bestScore = 0;
+    let value = null;
 
-    for (const item of items) {
-      if (!isLibraryTrack(item)) continue;
-      const itemTitle = normalize(item?.name || item?.title || "");
-      const itemArtist = normalize(trackArtists(item).join(" "));
-      if (!itemTitle || !isReasonableMatch(itemTitle, expectedTrack)) continue;
-      if (expectedArtist && itemArtist && !isReasonableMatch(itemArtist, expectedArtist)) continue;
-
-      let score = 0;
-      if (itemTitle === expectedTrack) score += 2;
-      else score += 1;
-      if (itemArtist && itemArtist === expectedArtist) score += 2;
-      else if (expectedArtist && itemArtist) score += 1;
-      // Prefer the studio edition over live/remaster/deluxe variants.
-      if (/\b(live|remaster(?:ed)?|deluxe|edition|version|explicit|clean)\b/i.test(String(item?.name || item?.title || ""))) {
-        score -= 1;
+    // 1) Direct lookup by name. MA may answer with an external provider
+    //    (Deezer/Bandcamp...) even when a local copy exists, so only accept
+    //    the answer when it is a local library item matching the query.
+    try {
+      const item = await maCommand("music/item_by_name", { name: track, artist });
+      if (item && isLibraryTrack(item) && matchesQuery(item, expectedArtist, expectedTrack)) {
+        value = toTrackMatch(item, artist);
       }
+    } catch {
+      // item_by_name unavailable or no usable match: fall through
+    }
 
-      if (score > bestScore) {
-        best = item;
-        bestScore = score;
+    // 1b) Retry with the base title (Last.fm titles often carry suffixes
+    //     like " - Reprise" or "(Live at ...)" that MA does not know).
+    if (!value) {
+      const baseTitle = String(track).split(/\s+[–—(-]/)[0].trim();
+      if (baseTitle && baseTitle !== track) {
+        try {
+          const item = await maCommand("music/item_by_name", { name: baseTitle, artist });
+          if (item && isLibraryTrack(item) && matchesQuery(item, expectedArtist, expectedTrack)) {
+            value = toTrackMatch(item, artist);
+          }
+        } catch {
+          // ignore: fall through to search
+        }
       }
     }
 
-    const value = best ? toTrackMatch(best, artist) : null;
+    // 2) Fallback: global search, keep only local library items and score them.
+    if (!value) {
+      const result = await maCommand("music/search", {
+        search_query: `${artist} ${track}`,
+        limit: MAX_SEARCH_LIMIT
+      });
+      const items = Array.isArray(result?.tracks) ? result.tracks : [];
+
+      let best = null;
+      let bestScore = 0;
+      for (const item of items) {
+        if (!isLibraryTrack(item)) continue;
+        if (!matchesQuery(item, expectedArtist, expectedTrack)) continue;
+        const score = scoreItem(item, expectedArtist, expectedTrack);
+        if (score > bestScore) {
+          best = item;
+          bestScore = score;
+        }
+      }
+      value = best ? toTrackMatch(best, artist) : null;
+    }
+
     searchCache.set(cacheKey, { value, expiresAt: now() + config.searchCacheTtlMs });
     return value;
   }

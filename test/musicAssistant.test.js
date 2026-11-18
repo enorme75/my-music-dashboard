@@ -22,9 +22,21 @@ function teardownEnv() {
   delete process.env.MA_PLAYER_ID;
 }
 
+const LIBRARY_ITEM = {
+  item_id: "2",
+  provider: "library",
+  name: "Hyperballad",
+  uri: "library://track/2",
+  artists: [{ name: "Björk" }]
+};
+
+function clientWith(handler) {
+  return createMusicAssistantClient({ httpPost: handler });
+}
+
 test("is not configured without MA_API_URL/MA_TOKEN", () => {
   teardownEnv();
-  const client = createMusicAssistantClient({ httpPost: async () => ({}) });
+  const client = clientWith(async () => ({}));
   assert.equal(client.isConfigured(), false);
   assert.throws(
     () => client.resolveQueueId(""),
@@ -34,69 +46,83 @@ test("is not configured without MA_API_URL/MA_TOKEN", () => {
 
 test("resolveQueueId prefers the request queue_id then MA_PLAYER_ID", () => {
   setupEnv({ MA_PLAYER_ID: "default-queue" });
-  const client = createMusicAssistantClient({ httpPost: async () => ({}) });
+  const client = clientWith(async () => ({}));
   assert.equal(client.resolveQueueId("chosen-queue"), "chosen-queue");
   assert.equal(client.resolveQueueId(""), "default-queue");
   assert.equal(client.resolveQueueId(null), "default-queue");
 });
 
-test("searchTrack picks the best library match and sends the bearer token", async () => {
+test("searchTrack accepts a direct library match from music/item_by_name", async () => {
   setupEnv();
   const calls = [];
-  const client = createMusicAssistantClient({
-    httpPost: async (url, payload, headers) => {
-      calls.push({ url, payload, headers });
-      return {
-        message_id: payload.message_id,
-        result: {
-          tracks: [
-            {
-              item_id: "1",
-              name: "Hyperballad (Live Remastered)",
-              artists: [{ name: "Björk" }],
-              uri: "library://track/1",
-              provider_mappings: [{ provider_instance: "library" }]
-            },
-            {
-              item_id: "2",
-              name: "Hyperballad",
-              artists: [{ name: "Björk" }],
-              uri: "library://track/2",
-              provider_mappings: [{ provider_instance: "library" }]
-            },
-            {
-              item_id: "3",
-              name: "Hyperballad",
-              artists: [{ name: "Björk" }],
-              uri: "spotify://track/3",
-              provider_mappings: [{ provider_instance: "spotify" }]
-            }
-          ]
-        }
-      };
-    }
+  const client = clientWith(async (url, payload, headers) => {
+    calls.push({ url, payload, headers });
+    assert.equal(payload.command, "music/item_by_name");
+    assert.deepEqual(payload.args, { name: "Hyperballad", artist: "Björk" });
+    return { message_id: payload.message_id, result: LIBRARY_ITEM };
   });
 
   const match = await client.searchTrack("Björk", "Hyperballad");
   assert.ok(match);
   assert.equal(match.id, "2");
   assert.equal(match.uri, "library://track/2");
-  assert.equal(match.name, "Hyperballad");
   assert.equal(match.artist, "Björk");
-
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "http://ma.local:8095/api");
-  assert.equal(calls[0].payload.command, "music/search");
-  assert.match(calls[0].payload.args.search_query, /Björk Hyperballad/);
   assert.equal(calls[0].headers.Authorization, "Bearer test-token");
 });
 
-test("searchTrack returns null when nothing matches the library", async () => {
+test("searchTrack falls back to music/search when item_by_name returns an external provider", async () => {
   setupEnv();
-  const client = createMusicAssistantClient({
-    httpPost: async () => ({ result: { tracks: [
+  const calls = [];
+  const client = clientWith(async (url, payload, headers) => {
+    calls.push({ payload, headers });
+    if (payload.command === "music/item_by_name") {
+      // MA answers with Deezer even though a local copy exists
+      return { result: {
+        item_id: "3135553",
+        provider: "deezer--UceRmhqT",
+        name: "One More Time",
+        uri: "deezer--UceRmhqT://track/3135553",
+        artists: [{ name: "Daft Punk" }]
+      } };
+    }
+    assert.equal(payload.command, "music/search");
+    return { result: { tracks: [
+      {
+        item_id: "1", name: "One More Time (Live Remastered)", artists: [{ name: "Daft Punk" }],
+        uri: "library://track/1", provider: "library"
+      },
+      {
+        item_id: "2", name: "One More Time", artists: [{ name: "Daft Punk" }],
+        uri: "library://track/2", provider: "library"
+      },
+      {
+        item_id: "3", name: "One More Time", artists: [{ name: "Daft Punk" }],
+        uri: "deezer--UceRmhqT://track/3", provider: "deezer--UceRmhqT"
+      }
+    ] } };
+  });
+
+  const match = await client.searchTrack("Daft Punk", "One More Time");
+  assert.ok(match);
+  assert.equal(match.id, "2", "studio library edition wins over live remaster and external provider");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].headers.Authorization, "Bearer test-token");
+});
+
+test("searchTrack returns null when no local match exists", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      return { result: {
+        item_id: "9", provider: "deezer--x", name: "Something Else",
+        uri: "deezer--x://track/9", artists: [{ name: "Other" }]
+      } };
+    }
+    return { result: { tracks: [
       { item_id: "9", name: "Something Else", artists: [{ name: "Other" }], uri: "library://track/9" }
-    ] } })
+    ] } };
   });
   assert.equal(await client.searchTrack("Björk", "Hyperballad"), null);
 });
@@ -104,13 +130,9 @@ test("searchTrack returns null when nothing matches the library", async () => {
 test("searchTrack caches results per normalized artist/track", async () => {
   setupEnv();
   let calls = 0;
-  const client = createMusicAssistantClient({
-    httpPost: async () => {
-      calls += 1;
-      return { result: { tracks: [
-        { item_id: "2", name: "Hyperballad", artists: [{ name: "Björk" }], uri: "library://track/2" }
-      ] } };
-    }
+  const client = clientWith(async () => {
+    calls += 1;
+    return { result: LIBRARY_ITEM };
   });
 
   const first = await client.searchTrack("Björk", "Hyperballad");
@@ -123,11 +145,9 @@ test("searchTrack caches results per normalized artist/track", async () => {
 test("playTrack posts player_queues/play_media with queue_id and media uri", async () => {
   setupEnv();
   const calls = [];
-  const client = createMusicAssistantClient({
-    httpPost: async (url, payload) => {
-      calls.push(payload);
-      return { message_id: payload.message_id, result: null };
-    }
+  const client = clientWith(async (url, payload) => {
+    calls.push(payload);
+    return { message_id: payload.message_id, result: null };
   });
 
   assert.equal(await client.playTrack("queue-1", "library://track/2"), true);
@@ -138,9 +158,7 @@ test("playTrack posts player_queues/play_media with queue_id and media uri", asy
 
 test("MA error payloads become MusicAssistantError with code and 502", async () => {
   setupEnv();
-  const client = createMusicAssistantClient({
-    httpPost: async () => ({ error: { code: "player_not_found", message: "No such player" } })
-  });
+  const client = clientWith(async () => ({ error: { code: "player_not_found", message: "No such player" } }));
   await assert.rejects(
     () => client.listPlayers(),
     error => error instanceof MusicAssistantError
@@ -152,9 +170,7 @@ test("MA error payloads become MusicAssistantError with code and 502", async () 
 
 test("unreachable MA becomes ma_unreachable", async () => {
   setupEnv();
-  const client = createMusicAssistantClient({
-    httpPost: async () => { throw new Error("connect ECONNREFUSED"); }
-  });
+  const client = clientWith(async () => { throw new Error("connect ECONNREFUSED"); });
   await assert.rejects(
     () => client.listPlayers(),
     error => error.code === "ma_unreachable" && error.statusCode === 502
@@ -163,12 +179,10 @@ test("unreachable MA becomes ma_unreachable", async () => {
 
 test("HTTP error responses become ma_http_<status>", async () => {
   setupEnv();
-  const client = createMusicAssistantClient({
-    httpPost: async () => {
-      const error = new Error("Request failed with status code 500");
-      error.response = { status: 500 };
-      throw error;
-    }
+  const client = clientWith(async () => {
+    const error = new Error("Request failed with status code 500");
+    error.response = { status: 500 };
+    throw error;
   });
   await assert.rejects(
     () => client.listPlayers(),
@@ -178,7 +192,7 @@ test("HTTP error responses become ma_http_<status>", async () => {
 
 test("not configured command throws not_configured with 503", async () => {
   teardownEnv();
-  const client = createMusicAssistantClient({ httpPost: async () => ({}) });
+  const client = clientWith(async () => ({}));
   await assert.rejects(
     () => client.searchTrack("A", "T"),
     error => error.code === "not_configured" && error.statusCode === 503
@@ -187,14 +201,12 @@ test("not configured command throws not_configured with 503", async () => {
 
 test("listPlayers maps player_queues/all entries", async () => {
   setupEnv();
-  const client = createMusicAssistantClient({
-    httpPost: async (url, payload) => {
-      assert.equal(payload.command, "player_queues/all");
-      return { result: [
-        { queue_id: "q1", display_name: "Salon", active: true },
-        { player_id: "q2", name: "Chambre" }
-      ] };
-    }
+  const client = clientWith(async (url, payload) => {
+    assert.equal(payload.command, "player_queues/all");
+    return { result: [
+      { queue_id: "q1", display_name: "Salon", active: true },
+      { player_id: "q2", name: "Chambre" }
+    ] };
   });
   assert.deepEqual(await client.listPlayers(), [
     { queue_id: "q1", name: "Salon", active: true },
@@ -204,15 +216,12 @@ test("listPlayers maps player_queues/all entries", async () => {
 
 test("checkAvailability maps raw artist/track keys to booleans", async () => {
   setupEnv();
-  const client = createMusicAssistantClient({
-    httpPost: async (url, payload) => {
-      if (payload.args.search_query.includes("T1")) {
-        return { result: { tracks: [
-          { item_id: "2", name: "T1", artists: [{ name: "A" }], uri: "library://track/2" }
-        ] } };
-      }
-      return { result: { tracks: [] } };
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      if (payload.args.name === "T1") return { result: { ...LIBRARY_ITEM, name: "T1", artists: [{ name: "A" }] } };
+      throw new Error("not found");
     }
+    return { result: { tracks: [] } };
   });
   const results = await client.checkAvailability([
     { artist: "A", track: "T1" },
@@ -223,15 +232,13 @@ test("checkAvailability maps raw artist/track keys to booleans", async () => {
 
 test("getStatus reports configured=false without env and players when configured", async () => {
   teardownEnv();
-  const offline = createMusicAssistantClient({ httpPost: async () => ({}) });
+  const offline = clientWith(async () => ({}));
   assert.deepEqual(await offline.getStatus(), { configured: false, players: [], defaultQueueId: null });
 
   setupEnv({ MA_PLAYER_ID: "q-default" });
-  const online = createMusicAssistantClient({
-    httpPost: async (url, payload) => ({ result: payload.command === "player_queues/all"
-      ? [{ queue_id: "q1", display_name: "Salon", active: true }]
-      : {} })
-  });
+  const online = clientWith(async (url, payload) => ({ result: payload.command === "player_queues/all"
+    ? [{ queue_id: "q1", display_name: "Salon", active: true }]
+    : {} }));
   const status = await online.getStatus();
   assert.equal(status.configured, true);
   assert.equal(status.defaultQueueId, "q-default");
