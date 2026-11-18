@@ -161,6 +161,21 @@ test("unreachable MA becomes ma_unreachable", async () => {
   );
 });
 
+test("HTTP error responses become ma_http_<status>", async () => {
+  setupEnv();
+  const client = createMusicAssistantClient({
+    httpPost: async () => {
+      const error = new Error("Request failed with status code 500");
+      error.response = { status: 500 };
+      throw error;
+    }
+  });
+  await assert.rejects(
+    () => client.listPlayers(),
+    error => error.code === "ma_http_500" && error.statusCode === 502
+  );
+});
+
 test("not configured command throws not_configured with 503", async () => {
   teardownEnv();
   const client = createMusicAssistantClient({ httpPost: async () => ({}) });

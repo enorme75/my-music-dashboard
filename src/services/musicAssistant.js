@@ -68,6 +68,14 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
         "Content-Type": "application/json"
       });
     } catch (error) {
+      const httpStatus = error.response?.status;
+      if (httpStatus) {
+        throw new MusicAssistantError(
+          `Music Assistant returned HTTP ${httpStatus}`,
+          `ma_http_${httpStatus}`,
+          502
+        );
+      }
       throw new MusicAssistantError(
         `Music Assistant request failed: ${error.message}`,
         "ma_unreachable",
