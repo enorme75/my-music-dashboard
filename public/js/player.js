@@ -96,7 +96,14 @@ async function onPlayClick(event) {
       body: JSON.stringify({ artist, track, queue_id: queueId })
     });
     setButtonState(button, "playing");
-    showToast(t("player.nowPlayingOn", { player: data.player_name || data.queue_id }), "success");
+    const playerName = data.player_name || data.queue_id;
+    const source = data.track?.source;
+    showToast(
+      source && source !== "library"
+        ? t("player.viaProvider", { player: playerName, provider: source })
+        : t("player.nowPlayingOn", { player: playerName }),
+      "success"
+    );
   } catch (error) {
     if (error.status === 404 || error.data?.code === "not_found") {
       markUnavailable(button);

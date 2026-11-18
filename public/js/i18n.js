@@ -30,6 +30,10 @@ const DICTIONARY = {
   player: {
     play: { fr: "Écouter sur Music Assistant", en: "Play on Music Assistant" },
     nowPlayingOn: { fr: "Lecture lancée sur {player}", en: "Playback started on {player}" },
+    viaProvider: {
+      fr: "Lecture sur {player} (via {provider})",
+      en: "Playing on {player} (via {provider})"
+    },
     notInLibrary: {
       fr: "Morceau absent de la bibliothèque Music Assistant",
       en: "Track not in the Music Assistant library"

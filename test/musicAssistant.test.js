@@ -72,7 +72,7 @@ test("searchTrack accepts a direct library match from music/item_by_name", async
   assert.equal(calls[0].headers.Authorization, "Bearer test-token");
 });
 
-test("searchTrack falls back to music/search when item_by_name returns an external provider", async () => {
+test("searchTrack prefers the local library copy over an external provider", async () => {
   setupEnv();
   const calls = [];
   const client = clientWith(async (url, payload, headers) => {
@@ -84,7 +84,8 @@ test("searchTrack falls back to music/search when item_by_name returns an extern
         provider: "deezer--UceRmhqT",
         name: "One More Time",
         uri: "deezer--UceRmhqT://track/3135553",
-        artists: [{ name: "Daft Punk" }]
+        artists: [{ name: "Daft Punk" }],
+        is_playable: true
       } };
     }
     assert.equal(payload.command, "music/search");
@@ -99,7 +100,7 @@ test("searchTrack falls back to music/search when item_by_name returns an extern
       },
       {
         item_id: "3", name: "One More Time", artists: [{ name: "Daft Punk" }],
-        uri: "deezer--UceRmhqT://track/3", provider: "deezer--UceRmhqT"
+        uri: "deezer--UceRmhqT://track/3", provider: "deezer--UceRmhqT", is_playable: true
       }
     ] } };
   });
@@ -107,11 +108,64 @@ test("searchTrack falls back to music/search when item_by_name returns an extern
   const match = await client.searchTrack("Daft Punk", "One More Time");
   assert.ok(match);
   assert.equal(match.id, "2", "studio library edition wins over live remaster and external provider");
+  assert.equal(match.source, "library");
   assert.equal(calls.length, 2);
   assert.equal(calls[1].headers.Authorization, "Bearer test-token");
 });
 
-test("searchTrack returns null when no local match exists", async () => {
+test("searchTrack falls back to a playable external provider when no local copy exists", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      return { result: {
+        item_id: "2430837725",
+        provider: "deezer--UceRmhqT",
+        name: "Fur Alina",
+        uri: "deezer--UceRmhqT://track/2430837725",
+        artists: [{ name: "Arvo Pärt" }],
+        is_playable: true
+      } };
+    }
+    return { result: { tracks: [] } };
+  });
+
+  const match = await client.searchTrack("Arvo Pärt", "Für Alina");
+  assert.ok(match);
+  assert.equal(match.uri, "deezer--UceRmhqT://track/2430837725");
+  assert.equal(match.source, "deezer--UceRmhqT");
+});
+
+test("searchTrack rejects external items with wrong or missing artist", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      return { result: {
+        item_id: "1", provider: "deezer--x", name: "Hyperballad", uri: "deezer--x://track/1",
+        artists: [{ name: "Someone Else" }], is_playable: true
+      } };
+    }
+    return { result: { tracks: [
+      { item_id: "2", provider: "deezer--x", name: "Hyperballad", uri: "deezer--x://track/2", artists: [], is_playable: true }
+    ] } };
+  });
+  assert.equal(await client.searchTrack("Björk", "Hyperballad"), null);
+});
+
+test("searchTrack ignores non-playable external items", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      return { result: {
+        item_id: "1", provider: "tidal--x", name: "Hyperballad", uri: "tidal--x://track/1",
+        artists: [{ name: "Björk" }], is_playable: false
+      } };
+    }
+    return { result: { tracks: [] } };
+  });
+  assert.equal(await client.searchTrack("Björk", "Hyperballad"), null);
+});
+
+test("searchTrack returns null when nothing matches at all", async () => {
   setupEnv();
   const client = clientWith(async (url, payload) => {
     if (payload.command === "music/item_by_name") {

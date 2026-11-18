@@ -115,15 +115,23 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return match ? match[1] : null;
   }
 
+  function isPlayable(item) {
+    return item?.is_playable !== false;
+  }
+
   function toTrackMatch(item, fallbackArtist) {
-    const uri = String(item.uri || "") || (item.item_id ? `library://track/${item.item_id}` : "");
-    const id = item.item_id ?? trackIdFromUri(uri);
-    if (!id) return null;
+    const rawProvider = String(item.provider || "");
+    const provider = rawProvider.toLowerCase();
+    const uri = String(item.uri || "") || (provider === "library" && item.item_id ? `library://track/${item.item_id}` : "");
+    const id = item.item_id ?? trackIdFromUri(uri) ?? (uri ? uri.split("://")[1] : null);
+    if (!id || !uri) return null;
+    const source = provider === "library" || uri.startsWith("library://") ? "library" : (rawProvider || uri.split("://")[0]);
     return {
       id,
-      uri: uri || `library://track/${id}`,
+      uri,
       name: String(item.name || item.title || ""),
-      artist: trackArtists(item)[0] || fallbackArtist
+      artist: trackArtists(item)[0] || fallbackArtist,
+      source
     };
   }
 
@@ -133,6 +141,18 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     if (!itemTitle || !isReasonableMatch(itemTitle, expectedTrack)) return false;
     if (expectedArtist && itemArtist && !isReasonableMatch(itemArtist, expectedArtist)) return false;
     return true;
+  }
+
+  // External providers (Deezer/Bandcamp) answer fuzzy lookups with unrelated
+  // tracks, so require both a real title match and a real artist match there.
+  // Local library items keep the more lenient matchesQuery.
+  function matchesExternal(item, expectedArtist, expectedTrack) {
+    const itemTitle = normalize(item?.name || item?.title || "");
+    const itemArtist = normalize(trackArtists(item).join(" "));
+    if (!itemTitle || !itemArtist || !expectedArtist) return false;
+    const titleOk = itemTitle === expectedTrack
+      || (itemTitle.length >= 4 && (itemTitle.includes(expectedTrack) || expectedTrack.includes(itemTitle)));
+    return titleOk && isReasonableMatch(itemArtist, expectedArtist);
   }
 
   function scoreItem(item, expectedArtist, expectedTrack) {
@@ -157,58 +177,61 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
 
     const expectedArtist = normalize(artist);
     const expectedTrack = normalize(track);
-    let value = null;
+    let bestLocal = null;
+    let bestExternal = null;
+
+    // Local library copies always win; external providers (Deezer, Bandcamp…)
+    // are only a fallback when no local copy exists.
+    const consider = item => {
+      if (!item) return;
+      if (isLibraryTrack(item)) {
+        if (!matchesQuery(item, expectedArtist, expectedTrack)) return;
+        const score = scoreItem(item, expectedArtist, expectedTrack);
+        if (!bestLocal || score > bestLocal.score) bestLocal = { item, score };
+      } else if (isPlayable(item)) {
+        if (!matchesExternal(item, expectedArtist, expectedTrack)) return;
+        const score = scoreItem(item, expectedArtist, expectedTrack);
+        // External fallback: streaming providers (Deezer) beat purchase/preview
+        // ones (Bandcamp) at equal score, because playback is full-length.
+        const provider = String(item.provider || "").toLowerCase();
+        const externalScore = score - 1 + (provider.startsWith("deezer") ? 0 : -0.5);
+        if (!bestExternal || externalScore > bestExternal.score) bestExternal = { item, score: externalScore };
+      }
+    };
 
     // 1) Direct lookup by name. MA may answer with an external provider
-    //    (Deezer/Bandcamp...) even when a local copy exists, so only accept
-    //    the answer when it is a local library item matching the query.
+    //    even when a local copy exists, so keep looking for a local match.
     try {
-      const item = await maCommand("music/item_by_name", { name: track, artist });
-      if (item && isLibraryTrack(item) && matchesQuery(item, expectedArtist, expectedTrack)) {
-        value = toTrackMatch(item, artist);
-      }
+      consider(await maCommand("music/item_by_name", { name: track, artist }));
     } catch {
       // item_by_name unavailable or no usable match: fall through
     }
 
     // 1b) Retry with the base title (Last.fm titles often carry suffixes
     //     like " - Reprise" or "(Live at ...)" that MA does not know).
-    if (!value) {
+    if (!bestLocal) {
       const baseTitle = String(track).split(/\s+[–—(-]/)[0].trim();
       if (baseTitle && baseTitle !== track) {
         try {
-          const item = await maCommand("music/item_by_name", { name: baseTitle, artist });
-          if (item && isLibraryTrack(item) && matchesQuery(item, expectedArtist, expectedTrack)) {
-            value = toTrackMatch(item, artist);
-          }
+          consider(await maCommand("music/item_by_name", { name: baseTitle, artist }));
         } catch {
           // ignore: fall through to search
         }
       }
     }
 
-    // 2) Fallback: global search, keep only local library items and score them.
-    if (!value) {
+    // 2) Fallback: global search across all providers.
+    if (!bestLocal) {
       const result = await maCommand("music/search", {
         search_query: `${artist} ${track}`,
         limit: MAX_SEARCH_LIMIT
       });
       const items = Array.isArray(result?.tracks) ? result.tracks : [];
-
-      let best = null;
-      let bestScore = 0;
-      for (const item of items) {
-        if (!isLibraryTrack(item)) continue;
-        if (!matchesQuery(item, expectedArtist, expectedTrack)) continue;
-        const score = scoreItem(item, expectedArtist, expectedTrack);
-        if (score > bestScore) {
-          best = item;
-          bestScore = score;
-        }
-      }
-      value = best ? toTrackMatch(best, artist) : null;
+      for (const item of items) consider(item);
     }
 
+    const best = bestLocal || bestExternal;
+    const value = best ? toTrackMatch(best.item, artist) : null;
     searchCache.set(cacheKey, { value, expiresAt: now() + config.searchCacheTtlMs });
     return value;
   }
