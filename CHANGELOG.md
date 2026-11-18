@@ -2,6 +2,20 @@
 
 All notable changes to YourLastFM are documented in this file.
 
+## [1.8.0] - 2026-11-18
+
+### Added
+- Bouton « Écouter » (▶) via Music Assistant (MA) sur les tops de l'accueil, la recherche, la page album et la page titre. Le morceau est recherché dans MA (`music/item_by_name`, puis `music/search`) avec priorité à la bibliothèque locale et fallback sur les providers externes playable (Deezer, Bandcamp) ; la lecture est lancée via `player_queues/play_media` après `player_queues/clear` (comportement « play now » : la queue du player choisi est vidée avant lecture).
+- Sélecteur de player MA dans la sidebar (choix persisté en localStorage) ; player par défaut configurable par nom (`MA_DEFAULT_PLAYER`, ex. `Squeezelite-MacBook`) ou par `queue_id` (`MA_PLAYER_ID`).
+- Nouveaux endpoints : `GET /api/player/status`, `POST /api/play`, `POST /api/play/availability` (boutons grisés avec tooltip quand le morceau est introuvable). Le token MA (`MA_TOKEN`) n'est jamais exposé au navigateur.
+- Nouvelles variables d'env : `MA_API_URL`, `MA_TOKEN`, `MA_PLAYER_ID`, `MA_DEFAULT_PLAYER`, `MA_REQUEST_TIMEOUT_MS`, `MA_SEARCH_CACHE_TTL_MS`, `MA_PLAYERS_CACHE_TTL_MS` (voir `.env.example`).
+
+### Changed
+- Le handler d'erreurs API renvoie aussi `error.code` quand il est présent.
+
+### Tests
+- 62 tests au total, dont les nouveaux `test/musicAssistant.test.js` et `test/normalizeText.test.js`.
+
 ## [1.7.0] - 2026-11-07
 
 ### Added
