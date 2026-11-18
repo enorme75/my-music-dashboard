@@ -803,7 +803,7 @@ app.post("/api/play", asyncRoute(async (req, res) => {
     });
   }
 
-  const resolvedQueueId = ma.resolveQueueId(queueId);
+  const resolvedQueueId = await ma.resolveQueueId(queueId);
   await ma.playTrack(resolvedQueueId, match.uri);
 
   const players = await ma.listPlayers().catch(() => []);

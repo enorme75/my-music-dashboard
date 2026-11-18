@@ -8,6 +8,9 @@ const DEFAULT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_PLAYERS_CACHE_TTL_MS = 60 * 1000;
 const MAX_SEARCH_LIMIT = 50;
 const MAX_AVAILABILITY_TRACKS = 200;
+// Default player when the browser has not chosen one. Resolved against the MA
+// player list by queue_id first, then by (case-insensitive) name.
+const DEFAULT_PLAYER_NAME = "Squeezelite-MacBook";
 
 class MusicAssistantError extends Error {
   constructor(message, code = "ma_error", statusCode = 502) {
@@ -23,6 +26,9 @@ function readConfig() {
     apiUrl: String(process.env.MA_API_URL || "").trim(),
     token: String(process.env.MA_TOKEN || "").trim(),
     defaultQueueId: String(process.env.MA_PLAYER_ID || "").trim(),
+    defaultPlayer: "MA_DEFAULT_PLAYER" in process.env
+      ? String(process.env.MA_DEFAULT_PLAYER || "").trim()
+      : DEFAULT_PLAYER_NAME,
     timeoutMs: Number(process.env.MA_REQUEST_TIMEOUT_MS || DEFAULT_REQUEST_TIMEOUT_MS),
     searchCacheTtlMs: Number(process.env.MA_SEARCH_CACHE_TTL_MS || DEFAULT_SEARCH_CACHE_TTL_MS),
     playersCacheTtlMs: Number(process.env.MA_PLAYERS_CACHE_TTL_MS || DEFAULT_PLAYERS_CACHE_TTL_MS)
@@ -262,16 +268,30 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return true;
   }
 
-  function resolveQueueId(queueId) {
-    const resolved = String(queueId || "").trim() || config.defaultQueueId;
-    if (!resolved) {
-      throw new MusicAssistantError(
-        "No Music Assistant player selected (queue_id required)",
-        "queue_required",
-        400
-      );
+  async function resolveQueueId(queueId) {
+    const direct = String(queueId || "").trim() || config.defaultQueueId;
+    if (direct) return direct;
+
+    if (config.defaultPlayer) {
+      try {
+        const players = await listPlayers();
+        const byId = players.find(player => player.queue_id === config.defaultPlayer);
+        if (byId) return byId.queue_id;
+        const byName = players.find(player =>
+          player.name.toLowerCase() === config.defaultPlayer.toLowerCase()
+        );
+        if (byName) return byName.queue_id;
+      } catch {
+        // player list unavailable: pass the configured value through as-is
+      }
+      return config.defaultPlayer;
     }
-    return resolved;
+
+    throw new MusicAssistantError(
+      "No Music Assistant player selected (queue_id required)",
+      "queue_required",
+      400
+    );
   }
 
   async function checkAvailability(tracks) {
@@ -290,7 +310,7 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
 
   async function getStatus() {
     if (!isConfigured()) {
-      return { configured: false, players: [], defaultQueueId: null };
+      return { configured: false, players: [], defaultQueueId: null, defaultPlayerName: config.defaultPlayer || null };
     }
     let players = [];
     try {
@@ -301,7 +321,8 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return {
       configured: true,
       players,
-      defaultQueueId: config.defaultQueueId || null
+      defaultQueueId: await resolveQueueId(""),
+      defaultPlayerName: config.defaultPlayer || null
     };
   }
 

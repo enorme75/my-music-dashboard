@@ -10,6 +10,7 @@ function setupEnv(overrides = {}) {
   process.env.MA_API_URL = "http://ma.local:8095/api";
   process.env.MA_TOKEN = "test-token";
   process.env.MA_PLAYER_ID = "";
+  process.env.MA_DEFAULT_PLAYER = "Squeezelite-MacBook";
   process.env.MA_REQUEST_TIMEOUT_MS = "8000";
   process.env.MA_SEARCH_CACHE_TTL_MS = "300000";
   process.env.MA_PLAYERS_CACHE_TTL_MS = "60000";
@@ -20,6 +21,7 @@ function teardownEnv() {
   delete process.env.MA_API_URL;
   delete process.env.MA_TOKEN;
   delete process.env.MA_PLAYER_ID;
+  delete process.env.MA_DEFAULT_PLAYER;
 }
 
 const LIBRARY_ITEM = {
@@ -38,18 +40,42 @@ test("is not configured without MA_API_URL/MA_TOKEN", () => {
   teardownEnv();
   const client = clientWith(async () => ({}));
   assert.equal(client.isConfigured(), false);
-  assert.throws(
-    () => client.resolveQueueId(""),
+});
+
+test("resolveQueueId prefers the request queue_id then MA_PLAYER_ID", async () => {
+  setupEnv({ MA_PLAYER_ID: "default-queue" });
+  const client = clientWith(async () => ({}));
+  assert.equal(await client.resolveQueueId("chosen-queue"), "chosen-queue");
+  assert.equal(await client.resolveQueueId(""), "default-queue");
+  assert.equal(await client.resolveQueueId(null), "default-queue");
+});
+
+test("resolveQueueId throws queue_required when no default is configured", async () => {
+  setupEnv({ MA_DEFAULT_PLAYER: "" });
+  const client = clientWith(async () => ({}));
+  await assert.rejects(
+    client.resolveQueueId(""),
     error => error.code === "queue_required" && error.statusCode === 400
   );
 });
 
-test("resolveQueueId prefers the request queue_id then MA_PLAYER_ID", () => {
-  setupEnv({ MA_PLAYER_ID: "default-queue" });
-  const client = clientWith(async () => ({}));
-  assert.equal(client.resolveQueueId("chosen-queue"), "chosen-queue");
-  assert.equal(client.resolveQueueId(""), "default-queue");
-  assert.equal(client.resolveQueueId(null), "default-queue");
+test("resolveQueueId resolves the default player by name from the MA player list", async () => {
+  setupEnv(); // MA_DEFAULT_PLAYER unset -> built-in default "Squeezelite-MacBook"
+  const client = clientWith(async (url, payload) => {
+    assert.equal(payload.command, "player_queues/all");
+    return { result: [
+      { queue_id: "dc:a6:32:c6:0c:ba", display_name: "Squeezelite-Delormel-Salon", active: true },
+      { queue_id: "02:00:00:00:00:00", display_name: "Squeezelite-MacBook", active: true }
+    ] };
+  });
+  assert.equal(await client.resolveQueueId(""), "02:00:00:00:00:00");
+  assert.equal(await client.resolveQueueId(""), "02:00:00:00:00:00", "players cache is reused");
+});
+
+test("resolveQueueId falls back to the configured default when the player list is unavailable", async () => {
+  setupEnv({ MA_DEFAULT_PLAYER: "Squeezelite-MacBook" });
+  const client = clientWith(async () => { throw new Error("boom"); });
+  assert.equal(await client.resolveQueueId(""), "Squeezelite-MacBook");
 });
 
 test("searchTrack accepts a direct library match from music/item_by_name", async () => {
@@ -287,7 +313,12 @@ test("checkAvailability maps raw artist/track keys to booleans", async () => {
 test("getStatus reports configured=false without env and players when configured", async () => {
   teardownEnv();
   const offline = clientWith(async () => ({}));
-  assert.deepEqual(await offline.getStatus(), { configured: false, players: [], defaultQueueId: null });
+  assert.deepEqual(await offline.getStatus(), {
+    configured: false,
+    players: [],
+    defaultQueueId: null,
+    defaultPlayerName: "Squeezelite-MacBook"
+  });
 
   setupEnv({ MA_PLAYER_ID: "q-default" });
   const online = clientWith(async (url, payload) => ({ result: payload.command === "player_queues/all"
