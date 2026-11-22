@@ -1,11 +1,16 @@
 let overlay = null;
 let image = null;
+let textPanel = null;
+let textTitle = null;
+let textBody = null;
 
 function closeLightbox() {
   if (!overlay || overlay.hidden) return;
   overlay.hidden = true;
   document.body.style.overflow = "";
   image.removeAttribute("src");
+  image.hidden = false;
+  textPanel.hidden = true;
 }
 
 function buildOverlay() {
@@ -24,7 +29,19 @@ function buildOverlay() {
   image.className = "image-lightbox-img";
   image.alt = "";
 
-  overlay.append(image, closeButton);
+  textPanel = document.createElement("div");
+  textPanel.className = "image-lightbox-text";
+  textPanel.hidden = true;
+  textPanel.addEventListener("click", event => event.stopPropagation());
+
+  textTitle = document.createElement("h3");
+  textTitle.className = "image-lightbox-text-title";
+
+  textBody = document.createElement("div");
+  textBody.className = "image-lightbox-text-body";
+
+  textPanel.append(textTitle, textBody);
+  overlay.append(image, textPanel, closeButton);
   document.body.appendChild(overlay);
 
   document.addEventListener("keydown", event => {
@@ -60,6 +77,18 @@ function openLightbox(source) {
 
   displaySource(upgradedSource(src), src);
   image.alt = source?.alt || "";
+  image.hidden = false;
+  textPanel.hidden = true;
+  overlay.hidden = false;
+  document.body.style.overflow = "hidden";
+}
+
+export function openTextOverlay(title, text) {
+  if (!overlay) buildOverlay();
+  textTitle.textContent = title || "";
+  textBody.textContent = text || "";
+  image.hidden = true;
+  textPanel.hidden = false;
   overlay.hidden = false;
   document.body.style.overflow = "hidden";
 }

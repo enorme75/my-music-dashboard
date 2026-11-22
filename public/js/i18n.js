@@ -338,6 +338,7 @@ const DICTIONARY = {
     topTracks: { fr: "Top titres", en: "Top tracks" },
     albums: { fr: "Albums écoutés", en: "Albums listened" },
     noBio: { fr: "Pas de biographie disponible.", en: "No biography available." },
+    readMore: { fr: "En savoir plus", en: "Read more" },
     playsStat: { fr: "{count} écoutes", en: "{count} plays" },
     tracksStat: { fr: "{count} titres", en: "{count} tracks" },
     albumsStat: { fr: "{count} albums", en: "{count} albums" },
