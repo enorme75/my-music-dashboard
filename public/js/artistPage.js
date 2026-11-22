@@ -2,6 +2,7 @@ import { fetchJSON } from "./api.js";
 import { t, getLocale } from "./i18n.js";
 import { formatTimestampDate } from "./dates.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 
 let currentArtist = null;
 let loadId = 0;
@@ -60,6 +61,7 @@ function renderTopTracks(data) {
         >
           <i class="mdi mdi-open-in-new"></i>
         </a>
+        ${playButtonHtml(data.artist, row.track)}
         <small>${Number(row.plays || 0).toLocaleString()} ${escapeHTML(t("common.playsUnit"))}</small>
       </div>
     </div>

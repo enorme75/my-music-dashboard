@@ -553,6 +553,7 @@ function initArtistRouting() {
     }
 
     if (event.target.closest("a[href]")) return;
+    if (event.target.closest(".play-btn") || event.target.closest(".scrobble-delete")) return;
     const target = event.target.closest("[data-artist]");
     const artist = target?.dataset?.artist;
     if (!artist) return;

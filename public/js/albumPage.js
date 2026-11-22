@@ -87,16 +87,20 @@ function buildLocalTrackIndex(tracks) {
   return index;
 }
 
-function renderDiscogsTracklist(data) {
+function renderFullTracklist(data, tracklist) {
   const container = document.getElementById("album-tracks");
   if (!container) return;
 
   const localTracks = buildLocalTrackIndex(data.tracks);
+  const matched = new Set();
 
-  container.innerHTML = (data.discogsTracklist || []).map((entry, index) => {
-    const local = localTracks.get(normalizeName(entry.title));
+  const rows = (tracklist || []).map((entry, index) => {
+    const base = normalizeName(entry.title);
+    const local = localTracks.get(base);
+    if (local) matched.add(base);
 
     if (!local) {
+      // Never played locally: dimmed, but still playable on Music Assistant.
       return `
         <div class="top-row top-row-external">
           <span class="rank">${index + 1}</span>
@@ -128,15 +132,51 @@ function renderDiscogsTracklist(data) {
         </div>
       </div>
     `;
-  }).join("");
+  });
+
+  // Local tracks that the external tracklist does not cover (bonus tracks,
+  // alternate takes, wrong external match…): keep them visible at the end.
+  for (const [base, entry] of localTracks) {
+    if (matched.has(base)) continue;
+    rows.push(`
+      <div class="top-row" data-track-artist="${escapeAttribute(data.artist)}" data-track-name="${escapeAttribute(entry.best.track)}">
+        <span class="rank">${rows.length + 1}</span>
+        <div class="meta">
+          <strong title="${escapeAttribute(t("track.viewPage"))}">${escapeHTML(entry.best.track)}</strong>
+          <a
+            class="music-link"
+            href="${escapeAttribute(entry.best.url || "#")}"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="${escapeAttribute(t("dashboard.openTrackOnLastfm"))}"
+          >
+            <i class="mdi mdi-open-in-new"></i>
+          </a>
+          ${playButtonHtml(data.artist, entry.best.track)}
+          <small>${Number(entry.plays || 0).toLocaleString()} ${escapeHTML(t("common.playsUnit"))}</small>
+        </div>
+      </div>
+    `);
+  }
+
+  container.innerHTML = rows.join("");
 }
 
 function renderTracks(data) {
   const container = document.getElementById("album-tracks");
   if (!container) return;
 
-  if (Array.isArray(data.discogsTracklist) && data.discogsTracklist.length) {
-    renderDiscogsTracklist(data);
+  // Full album tracklist (original order) when an external source provides
+  // one: Discogs first, then Last.fm. Tracks never played locally are dimmed
+  // but still get a play button.
+  const fullTracklist = (Array.isArray(data.discogsTracklist) && data.discogsTracklist.length)
+    ? data.discogsTracklist
+    : (Array.isArray(data.lastfmTracklist) && data.lastfmTracklist.length)
+      ? data.lastfmTracklist
+      : null;
+
+  if (fullTracklist) {
+    renderFullTracklist(data, fullTracklist);
     return;
   }
 

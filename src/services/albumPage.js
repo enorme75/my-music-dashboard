@@ -3,6 +3,7 @@ const { getTrackUrl, getAlbumUrl, getArtistUrl } = require("../utils/lastfmUrl")
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureAlbumYear } = require("./albumYearCache");
 const { ensureDiscogsAlbumLink } = require("./discogsCache");
+const { getAlbumTracks: fetchLastfmAlbumTracks } = require("./lastfm-album");
 const { withDashboardCache } = require("./dashboardCache");
 
 const getAlbumStats = db.prepare(`
@@ -32,10 +33,11 @@ async function buildAlbumPage(artist, album) {
   if (!stats || stats.plays === 0) return null;
 
   const tracks = getAlbumTracks.all(artist, album);
-  const [cover, year, discogs] = await Promise.all([
+  const [cover, year, discogs, lastfmTracks] = await Promise.all([
     ensureAlbumCover(artist, album).catch(() => null),
     ensureAlbumYear(artist, album),
-    ensureDiscogsAlbumLink(artist, album).catch(() => null)
+    ensureDiscogsAlbumLink(artist, album).catch(() => null),
+    fetchLastfmAlbumTracks(artist, album).catch(() => null)
   ]);
 
   return {
@@ -54,6 +56,7 @@ async function buildAlbumPage(artist, album) {
     styles: discogs?.styles || null,
     label: discogs?.label || null,
     discogsTracklist: discogs?.tracklist || null,
+    lastfmTracklist: lastfmTracks || null,
     tracks: tracks.map(row => ({
       track: row.track,
       plays: row.plays,

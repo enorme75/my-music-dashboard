@@ -1,6 +1,7 @@
 import { fetchJSON } from "./api.js";
 import { t, getLocale } from "./i18n.js";
 import { escapeAttribute, escapeHTML, safeImageUrl } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 
 let currentPage = 1;
 let loading = false;
@@ -89,6 +90,7 @@ export function scrobbleItemHTML(scrobble, { compact = false, clock = false, loc
               : timeAgo(scrobble.date)}
         </div>
       </div>
+      ${playButtonHtml(scrobble.artist, scrobble.track)}
       ${scrobble.delete_url
         ? `<a
             class="scrobble-delete"

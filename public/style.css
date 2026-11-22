@@ -1302,6 +1302,17 @@ strong {
   opacity: 0.6;
 }
 
+.scrobble-item .play-btn {
+  align-self: center;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.scrobble-item .play-btn:hover,
+.scrobble-item .play-btn:focus-visible {
+  opacity: 1;
+}
+
 .scrobble-delete {
   align-self: center;
   flex-shrink: 0;
