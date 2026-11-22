@@ -415,6 +415,10 @@ const DICTIONARY = {
     failedRetry: {
       fr: "{detail}. La même fenêtre sera retentée.",
       en: "{detail}. The same sync window will be retried."
+    },
+    interrupted: {
+      fr: "Synchronisation interrompue (processus arrêté)",
+      en: "Sync interrupted (process stopped)"
     }
   }
 };

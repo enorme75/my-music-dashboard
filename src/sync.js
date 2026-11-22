@@ -95,9 +95,7 @@ function saveSyncStatus(status) {
   }));
 }
 
-function getSyncStatus() {
-  const row = getMetadata.get(STATUS_KEY);
-
+function parseSyncStatus(row) {
   if (!row?.value) {
     return {
       running: false,
@@ -125,6 +123,35 @@ function getSyncStatus() {
       messageKey: "sync.unknown"
     };
   }
+}
+
+// A sync refreshes the lock file on every page, so a missing or stale lock
+// means no sync is actually running (the writer process was killed or the
+// server restarted) even though the persisted status still says "running".
+function isSyncLockFresh() {
+  try {
+    return Date.now() - fs.statSync(LOCK_FILE).mtimeMs <= CONFIG.STALE_LOCK_MS;
+  } catch {
+    return false;
+  }
+}
+
+function getSyncStatus() {
+  let status = parseSyncStatus(getMetadata.get(STATUS_KEY));
+
+  if (status.running && !isSyncLockFresh()) {
+    removeStaleLock();
+    status = {
+      ...status,
+      running: false,
+      interrupted: true,
+      message: "Synchronisation interrompue (processus arrêté)",
+      messageKey: "sync.interrupted"
+    };
+    saveSyncStatus(status);
+  }
+
+  return status;
 }
 
 function removeStaleLock() {
