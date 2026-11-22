@@ -117,8 +117,21 @@ async function withDashboardCache(cacheKey, producer) {
   return build;
 }
 
+// Read-only peek and explicit write, used by the two-phase detail pages
+// (artist/album): serve a DB-only page instantly, then let a background
+// enrichment store the full page in the same cache.
+function peekDashboardCache(cacheKey) {
+  return readCachedDashboard(cacheKey, getDashboardCacheRevision());
+}
+
+function setDashboardCacheEntry(cacheKey, data) {
+  setCacheEntry.run(cacheKey, getDashboardCacheRevision(), JSON.stringify(data), Date.now());
+}
+
 module.exports = {
   getDashboardCacheRevision,
   invalidateDashboardCache,
+  peekDashboardCache,
+  setDashboardCacheEntry,
   withDashboardCache
 };

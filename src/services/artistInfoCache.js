@@ -120,4 +120,16 @@ async function ensureArtistInfo(artist, lang = "en") {
   return request;
 }
 
-module.exports = { ensureArtistInfo };
+// Read-only access for the fast (DB-only) page build. Bios are stored in
+// ARTIST_BIO_LANG regardless of the UI language, so the lang check is skipped.
+function getCachedArtistBio(artist) {
+  const cached = getCachedInfo.get(artist);
+  if (!cached) return null;
+  if (!cached.bio && cached.updated_at <= Date.now() - FAILURE_TTL_MS) return null;
+  return {
+    bio: cached.bio || null,
+    listenbrainzUrl: cached.listenbrainz_url || null
+  };
+}
+
+module.exports = { ensureArtistInfo, getCachedArtistBio };

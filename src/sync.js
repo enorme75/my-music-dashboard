@@ -18,6 +18,7 @@ const { sanitizeError } = require("./utils/sanitizeAxios");
 const { parseSyncCheckpoint, resolveSyncWindow } = require("./utils/syncWindow");
 const { invalidateDashboardCache } = require("./services/dashboardCache");
 const { isDeletedScrobble } = require("./services/scrobbleDeletion");
+const { prewarmMetadata } = require("./services/prewarm");
 
 const CONFIG = {
   REQUEST_DELAY: Math.max(0, Number(process.env.LISTENBRAINZ_REQUEST_DELAY_MS || 1000)),
@@ -74,7 +75,7 @@ const deleteMetadata = db.prepare(`
   WHERE key = ?
 `);
 
-const runSyncTransaction = db.transaction(listens => {
+const runSyncTransaction = db.transaction((listens, added) => {
   let inserted = 0;
   let skipped = 0;
 
@@ -99,6 +100,7 @@ const runSyncTransaction = db.transaction(listens => {
 
     if (result.changes > 0) {
       inserted++;
+      if (Array.isArray(added)) added.push(listen);
     } else {
       backfillScrobbleMetadata.run(duration, artistMbid, releaseMbid, recordingMbid, artist, track, playedAt);
       skipped++;
@@ -282,6 +284,7 @@ async function runSync(options, lock) {
   let currentPage = 0;
   let cursorMax = to;
   const startedAt = Date.now();
+  const addedListens = [];
 
   saveSyncStatus({
     running: true,
@@ -308,7 +311,7 @@ async function runSync(options, lock) {
       const batch = Array.isArray(payload?.listens) ? payload.listens : [];
 
       if (batch.length) {
-        const result = runSyncTransaction(batch);
+        const result = runSyncTransaction(batch, addedListens);
         totalInserted += result.inserted;
         totalSkipped += result.skipped;
       }
@@ -349,7 +352,16 @@ async function runSync(options, lock) {
     const finishedAt = Date.now();
     deleteMetadata.run(CHECKPOINT_KEY);
     setMetadata.run("last_sync", String(finishedAt));
-    invalidateDashboardCache();
+    if (totalInserted > 0) {
+      // Only new listens can change dashboard results; avoid invalidating the
+      // cache on every scheduled run (which forced a full rebuild on the
+      // next request). New items are warmed in the background so the rebuild
+      // finds their metadata already cached.
+      invalidateDashboardCache();
+      prewarmMetadata(addedListens).catch(error => {
+        console.warn("⚠️ Metadata prewarm failed:", error.message || error);
+      });
+    }
     saveSyncStatus({
       running: false,
       mode,

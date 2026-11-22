@@ -203,4 +203,16 @@ function ensureDiscogsAlbumLink(artist, album) {
   return ensureDiscogsInfo("album", artist, album, () => fetchMasterInfo(artist, album));
 }
 
-module.exports = { ensureDiscogsArtistLink, ensureDiscogsAlbumLink };
+// Read-only access for the fast (DB-only) page build.
+function getCachedDiscogsLink(kind, artist, album) {
+  const cached = getCachedLink.get(kind, artist, album || "");
+  if (!cached || !cached.url || !cached.payload) return null;
+  if (cached.updated_at <= Date.now() - LINK_TTL_MS) return null;
+  try {
+    return { url: cached.url, ...JSON.parse(cached.payload) };
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { ensureDiscogsArtistLink, ensureDiscogsAlbumLink, getCachedDiscogsLink };

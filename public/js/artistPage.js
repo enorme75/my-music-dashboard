@@ -3,6 +3,7 @@ import { t, getLocale } from "./i18n.js";
 import { formatTimestampDate } from "./dates.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
 import { playButtonHtml } from "./player.js";
+import { openTextOverlay } from "./lightbox.js";
 
 let currentArtist = null;
 let loadId = 0;
@@ -25,6 +26,11 @@ function showLoadingState() {
     const element = document.getElementById(id);
     if (element) element.textContent = "";
   }
+
+  const loadingBio = document.getElementById("artist-bio");
+  if (loadingBio) loadingBio.classList.remove("clamped");
+  const loadingBioMore = document.getElementById("artist-bio-more");
+  if (loadingBioMore) loadingBioMore.hidden = true;
 
   const image = document.getElementById("artist-image");
   if (image) image.src = "/images/artist-placeholder.png";
@@ -140,10 +146,53 @@ function renderArtist(data) {
   }
 
   const bio = document.getElementById("artist-bio");
-  if (bio) bio.textContent = data.bio || t("artist.noBio");
+  const bioMore = document.getElementById("artist-bio-more");
+  if (bio) {
+    const bioText = data.bio || "";
+    bio.textContent = bioText || t("artist.noBio");
+    bio.classList.toggle("clamped", Boolean(bioText));
+    if (bioMore) {
+      bioMore.hidden = !bioText;
+      bioMore.onclick = bioText
+        ? () => openTextOverlay(data.artist || currentArtist || "", bioText)
+        : null;
+      if (bioText) {
+        requestAnimationFrame(() => {
+          if (bio.scrollHeight <= bio.clientHeight + 1) {
+            bio.classList.remove("clamped");
+            bioMore.hidden = true;
+          }
+        });
+      }
+    }
+  }
 
   renderTopTracks(data);
   renderAlbums(data);
+}
+
+// The API answers instantly with a DB-only page (enriching: true) and fills
+// the metadata caches in the background: poll until the enriched page lands.
+const ENRICH_POLL_MS = 2500;
+const ENRICH_POLL_MAX = 24;
+
+function scheduleEnrichPoll(name, request, attempt) {
+  if (request !== loadId || currentArtist !== name || attempt >= ENRICH_POLL_MAX) return;
+  setTimeout(async () => {
+    if (request !== loadId || currentArtist !== name) return;
+    try {
+      const lang = getLocale().slice(0, 2);
+      const data = await fetchJSON(
+        `/api/artist/${encodeURIComponent(name)}?lang=${lang}`,
+        { cache: "no-store" }
+      );
+      if (request !== loadId || currentArtist !== name) return;
+      renderArtist(data);
+      if (data.enriching) scheduleEnrichPoll(name, request, attempt + 1);
+    } catch {
+      // best-effort polling: the page is already rendered
+    }
+  }, ENRICH_POLL_MS);
 }
 
 export async function loadArtist(name) {
@@ -164,6 +213,7 @@ export async function loadArtist(name) {
 
     if (request !== loadId || currentArtist !== name) return;
     renderArtist(data);
+    if (data.enriching) scheduleEnrichPoll(name, request, 0);
   } catch (error) {
     console.error("Error loading artist page:", error);
   } finally {

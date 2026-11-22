@@ -15,12 +15,11 @@ const { fillMissingDates, getLocalDayModifier, parseTimezoneOffset } = require("
 const { mapWithConcurrency } = require("./utils/mapWithConcurrency");
 const { sanitizeError } = require("./utils/sanitizeAxios");
 const {
-  MAX_LISTENS_PER_REQUEST,
-  getListens,
   getPlayingNow,
   getUsername,
   normalizeListen
 } = require("./utils/listenbrainz");
+const { createTtlCache } = require("./utils/ttlCache");
 const { getUserListensUrl } = require("./utils/listenbrainzUrl");
 const { getListenCoverUrl } = require("./utils/coverArtArchive");
 const { deleteScrobbleLocally } = require("./services/scrobbleDeletion");
@@ -61,6 +60,21 @@ const publicDir = path.join(__dirname, "../public");
 const albumCoversDir = path.join(db.dataDir, "covers/albums");
 const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const STATIC_ASSET_CACHE_SECONDS = Math.max(0, Number(process.env.STATIC_ASSET_CACHE_SECONDS) || 300);
+// Live ListenBrainz "playing-now" is cached briefly: it is the only piece of
+// /api/recent-scrobbles that cannot come from the local DB yet. The recent
+// list itself is served from the synced DB so page loads stay instant.
+const PLAYING_NOW_CACHE_TTL_MS = Math.max(1000, Number(process.env.PLAYING_NOW_CACHE_TTL_MS || 15000));
+const USER_STATS_CACHE_TTL_MS = Math.max(1000, Number(process.env.USER_STATS_CACHE_TTL_MS || 60000));
+const playingNowCache = createTtlCache();
+const userStatsCache = createTtlCache();
+
+const getRecentScrobblesTotal = db.prepare(`SELECT COUNT(*) AS total FROM scrobbles`);
+const getRecentScrobblesPage = db.prepare(`
+  SELECT track, artist, album, album_image, release_mbid, played_at
+  FROM scrobbles
+  ORDER BY played_at DESC, rowid DESC
+  LIMIT ? OFFSET ?
+`);
 
 function asyncRoute(handler) {
   return (req, res, next) => {
@@ -556,51 +570,45 @@ app.get("/api/recent-scrobbles", asyncRoute(async (req, res) => {
   const limit = Number.isInteger(parsedLimit) && parsedLimit > 0
     ? Math.min(parsedLimit, 100)
     : 50;
+  const offset = (page - 1) * limit;
 
   const username = getUsername();
   const deleteUrl = getUserListensUrl(username);
 
-  const toItem = (listen, nowPlaying = false) => {
-    const normalized = normalizeListen(listen);
-    return {
-      track: normalized.track,
-      artist: normalized.artist || "Unknown artist",
-      album: normalized.album,
-      image: getListenCoverUrl(normalized, "500"),
-      nowPlaying,
-      date: normalized.playedAt ? normalized.playedAt * 1000 : null,
-      delete_url: deleteUrl
-    };
-  };
+  const toItem = (listen, nowPlaying = false) => ({
+    track: listen.track,
+    artist: listen.artist || "Unknown artist",
+    album: listen.album,
+    image: listen.albumImage || getListenCoverUrl(listen, "500"),
+    nowPlaying,
+    date: listen.playedAt ? listen.playedAt * 1000 : null,
+    delete_url: deleteUrl
+  });
 
-  // ListenBrainz has no page parameter: fetch up to page*limit newest listens
-  // by walking the max_ts cursor backwards, then slice the requested page.
-  const target = page * limit;
-  const collected = [];
-  let cursorMax = 0;
+  // The synced local DB mirrors ListenBrainz (sync runs every few minutes and
+  // the source batches listens anyway), so the list is read locally: instant
+  // and stable pagination. Only "playing now" still comes from the API.
+  const total = Number(getRecentScrobblesTotal.get()?.total || 0);
+  const rows = getRecentScrobblesPage.all(limit, offset);
 
-  while (collected.length < target) {
-    const wanted = Math.min(target - collected.length, MAX_LISTENS_PER_REQUEST);
-    const payload = await getListens({ user: username, maxTs: cursorMax, count: wanted });
-    const batch = Array.isArray(payload?.listens) ? payload.listens : [];
-    if (!batch.length) break;
-
-    collected.push(...batch);
-    if (batch.length < wanted) break;
-
-    const oldest = Math.min(...batch.map(listen => Number(listen?.listened_at) || 0));
-    cursorMax = oldest - 1;
-  }
-
-  let tracks = collected
-    .slice((page - 1) * limit, page * limit)
-    .map(listen => toItem(listen));
+  let tracks = rows.map(row => toItem({
+    track: row.track,
+    artist: row.artist,
+    album: row.album,
+    playedAt: row.played_at,
+    releaseMbid: row.release_mbid,
+    albumImage: row.album_image
+  }));
 
   if (page === 1) {
     try {
-      const playingNow = await getPlayingNow(username);
+      const playingNow = await playingNowCache.get(
+        "playing-now",
+        PLAYING_NOW_CACHE_TTL_MS,
+        () => getPlayingNow(username)
+      );
       if (playingNow) {
-        tracks = [toItem(playingNow, true), ...tracks];
+        tracks = [toItem(normalizeListen(playingNow), true), ...tracks];
       }
     } catch (error) {
       console.warn("[ListenBrainz] playing-now unavailable:", sanitizeError(error).message);
@@ -609,7 +617,7 @@ app.get("/api/recent-scrobbles", asyncRoute(async (req, res) => {
 
   res.json({
     tracks,
-    hasMore: collected.length >= target
+    hasMore: offset + rows.length < total
   });
 }));
 
@@ -703,7 +711,9 @@ app.get("/api/user-stats", asyncRoute(async (req, res) => {
 
   const [listenBrainzData, stats] = await Promise.all([
     getListenBrainzUserInfo(),
-    Promise.resolve(db.prepare(`
+    // Full-table GROUP BY scans on every page load: cached briefly, the
+    // numbers only move when a sync inserts new scrobbles.
+    userStatsCache.get("db-stats", USER_STATS_CACHE_TTL_MS, () => Promise.resolve(db.prepare(`
       SELECT
         COUNT(*) AS totalScrobbles,
         COUNT(DISTINCT artist) AS uniqueArtists,
@@ -726,7 +736,7 @@ app.get("/api/user-stats", asyncRoute(async (req, res) => {
         ) AS uniqueTracks,
         MIN(played_at) AS joinedDate
       FROM scrobbles
-    `).get())
+    `).get()))
   ]);
 
   res.json({

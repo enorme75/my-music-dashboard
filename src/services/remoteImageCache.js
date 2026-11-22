@@ -11,8 +11,32 @@ const cacheDir = path.join(db.dataDir, "image-cache");
 const maxImageBytes = Math.max(1024, Number(process.env.SHARE_IMAGE_MAX_BYTES) || 10 * 1024 * 1024);
 const requestTimeout = Math.max(1000, Number(process.env.IMAGE_REQUEST_TIMEOUT_MS) || 10000);
 const failureTtlMs = Math.max(60000, Number(process.env.IMAGE_FAILURE_CACHE_MS) || 10 * 60 * 1000);
+const maxConcurrentDownloads = Math.max(1, Number(process.env.EXTERNAL_REQUEST_CONCURRENCY || 4));
 const inFlight = new Map();
 const failedUntil = new Map();
+
+// Upstream image hosts (Cover Art Archive / archive.org) are slow and rate
+// limit bursts: without a cap, a cold page fires one request per <img> at
+// once, which stalls every image and can trigger 429 retry storms.
+let activeDownloads = 0;
+const downloadWaiters = [];
+
+function acquireDownloadSlot() {
+  if (activeDownloads < maxConcurrentDownloads) {
+    activeDownloads += 1;
+    return Promise.resolve();
+  }
+  return new Promise(resolve => downloadWaiters.push(resolve));
+}
+
+function releaseDownloadSlot() {
+  activeDownloads -= 1;
+  const next = downloadWaiters.shift();
+  if (next) {
+    activeDownloads += 1;
+    next();
+  }
+}
 
 // Hosts allowed through the image proxy. Besides the legacy Last.fm/Deezer
 // CDNs (covers cached before the ListenBrainz migration still point there),
@@ -190,7 +214,13 @@ async function fetchRemoteImage(source, ignoreCache = false) {
     if (cached) return cached;
   }
 
-  const downloaded = await downloadRemoteImage(normalized);
+  await acquireDownloadSlot();
+  let downloaded;
+  try {
+    downloaded = await downloadRemoteImage(normalized);
+  } finally {
+    releaseDownloadSlot();
+  }
   await writeCachedImage(paths, downloaded);
 
   return {

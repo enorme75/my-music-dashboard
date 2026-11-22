@@ -61,4 +61,13 @@ function ensureAlbumYear(artist, album) {
   return request;
 }
 
-module.exports = { ensureAlbumYear };
+// Read-only access for the fast (DB-only) page build: returns the year only
+// when the cache entry is fresh enough to display.
+function getCachedAlbumYear(artist, album) {
+  const cached = getCachedYear.get(artist, album);
+  if (!cached || !cached.release_year) return null;
+  if (cached.updated_at <= Date.now() - YEAR_TTL_MS) return null;
+  return cached.release_year;
+}
+
+module.exports = { ensureAlbumYear, getCachedAlbumYear };

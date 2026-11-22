@@ -249,6 +249,29 @@ function renderAlbumPage(data) {
   renderTracks(data);
 }
 
+// The API answers instantly with a DB-only page (enriching: true) and fills
+// the metadata caches in the background: poll until the enriched page lands.
+const ENRICH_POLL_MS = 2500;
+const ENRICH_POLL_MAX = 24;
+
+function scheduleEnrichPoll(artist, album, key, request, attempt) {
+  if (request !== loadId || currentAlbum !== key || attempt >= ENRICH_POLL_MAX) return;
+  setTimeout(async () => {
+    if (request !== loadId || currentAlbum !== key) return;
+    try {
+      const data = await fetchJSON(
+        `/api/album/${encodeURIComponent(artist)}/${encodeURIComponent(album)}`,
+        { cache: "no-store" }
+      );
+      if (request !== loadId || currentAlbum !== key) return;
+      renderAlbumPage(data);
+      if (data.enriching) scheduleEnrichPoll(artist, album, key, request, attempt + 1);
+    } catch {
+      // best-effort polling: the page is already rendered
+    }
+  }, ENRICH_POLL_MS);
+}
+
 export async function loadAlbum(artist, album) {
   if (!artist || !album) return;
   const key = `${artist}\u0000${album}`;
@@ -267,6 +290,7 @@ export async function loadAlbum(artist, album) {
 
     if (request !== loadId || currentAlbum !== key) return;
     renderAlbumPage(data);
+    if (data.enriching) scheduleEnrichPoll(artist, album, key, request, 0);
   } catch (error) {
     console.error("Error loading album page:", error);
   } finally {

@@ -31,6 +31,7 @@ const { toImageProxyUrl } = require("./remoteImageCache");
 const { findReleaseGroup, getReleaseGroupTracks } = require("./musicbrainz");
 
 const MAIN_USER = normalizeText(getUsername());
+const MAIN_USER_KEY = normalizeKey(getUsername());
 const AVATAR_PLACEHOLDER = "/images/artist-placeholder.png";
 const COVER_PLACEHOLDER = "/images/cover-placeholder.svg";
 const CHART_REQUEST_DELAY_MS = Math.max(0, Number(process.env.LISTENBRAINZ_REQUEST_DELAY_MS || 1000));
@@ -410,15 +411,39 @@ function deleteLeaderboardGroup(groupId) {
   return { deleted: true, id: Number(group.id) };
 }
 
+const getLocalChartListens = db.prepare(`
+  SELECT artist, track, album, played_at, artist_mbid, release_mbid, recording_mbid
+  FROM scrobbles
+  WHERE played_at >= ? AND played_at <= ?
+`);
+
 // Charts over an arbitrary [from, to] window: ListenBrainz stats only expose
-// fixed ranges, so we aggregate the raw listens of the window ourselves.
+// fixed ranges, so we aggregate the raw listens of the window ourselves. For
+// the main user the synced local DB already holds every listen (sync runs
+// every few minutes), which answers instantly; other users are still fetched
+// live from the ListenBrainz API.
 async function fetchUserChart(username, type, range) {
-  const listens = await getAllListens({
-    user: username,
-    minTs: range.fromTimestamp,
-    maxTs: range.toTimestamp,
-    delayMs: CHART_REQUEST_DELAY_MS
-  });
+  let listens;
+  if (normalizeKey(username) === MAIN_USER_KEY) {
+    listens = getLocalChartListens
+      .all(range.fromTimestamp, range.toTimestamp)
+      .map(row => ({
+        artist: row.artist,
+        track: row.track,
+        album: row.album,
+        playedAt: row.played_at,
+        artistMbid: row.artist_mbid,
+        releaseMbid: row.release_mbid,
+        recordingMbid: row.recording_mbid
+      }));
+  } else {
+    listens = await getAllListens({
+      user: username,
+      minTs: range.fromTimestamp,
+      maxTs: range.toTimestamp,
+      delayMs: CHART_REQUEST_DELAY_MS
+    });
+  }
 
   const items = buildChartItemsFromListens(type, listens, {
     getArtistUrl,
