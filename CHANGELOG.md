@@ -2,6 +2,21 @@
 
 All notable changes to YourLastFM are documented in this file.
 
+## [1.9.0] - 2026-11-22
+
+### Added
+- Bouton « ▶ Lire l'album » en en-tête de la page album : résout l'album dans Music Assistant (`music/item_by_name` avec `media_type: "album"`, puis `music/search` section albums), priorité bibliothèque locale puis providers externes playable (Deezer > Bandcamp), malus sur les éditions live/deluxe/remaster, puis lecture via `player_queues/clear` + `play_media` avec l'uri album. Nouveaux endpoints `POST /api/play/album` et `POST /api/play/album/availability` (bouton grisé avec tooltip si l'album est introuvable).
+- Boutons ▶ (Music Assistant) sur chaque titre de la page album — y compris les pistes jamais écoutées —, sur chaque scrobble (accueil et page Scrobbles) et sur chaque morceau du top de la page artiste.
+- Page album : la tracklist affichée est désormais toujours complète, dans l'ordre original — Discogs d'abord, sinon repli sur Last.fm (`album.getInfo`, nouveau champ `lastfmTracklist` de `/api/album`). Les titres jamais écoutés sont grisés (« — ») mais restent jouables ; les titres locaux hors tracklist externe sont conservés en fin de liste.
+- Page d'accueil centrée sur la journée : les 4 cartes de résumé « Aujourd'hui » (avec comparaisons vs hier et moyenne/jour sur l'année en cours) remplacent les tuiles globales, conservées en petite ligne sous le pseudo ; les tops albums/artistes/morceaux ont des pilules Jour / Semaine / Mois / Année (Jour par défaut, indépendantes par module).
+
+### Fixed
+- Synchronisation bloquée « En cours » au redémarrage : un process de synchro tué laissait `sync_status` à `running: true` en base (bouton Sync désactivé, polling infini). `getSyncStatus()` remet désormais le statut à « interrompu » quand le lock fichier est absent ou périmé (> 2 h), et supprime le lock périmé.
+- Un clic sur le bouton ▶ ou la poubelle d'une ligne de scrobble n'ouvre plus la page artiste.
+
+### Tests
+- 74 tests au total, dont les nouveaux tests album de `test/musicAssistant.test.js` (8) et `test/syncStatus.test.js` (4).
+
 ## [1.8.0] - 2026-11-18
 
 ### Added
