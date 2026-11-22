@@ -12,7 +12,9 @@ const HTTPS_IMAGE_HOSTS = [
   /(^|\.)lastfm-img2\.akamaized\.net$/i,
   /(^|\.)img2-ak\.lst\.fm$/i,
   /(^|\.)dzcdn\.net$/i,
-  /(^|\.)deezer\.com$/i
+  /(^|\.)deezer\.com$/i,
+  /(^|\.)coverartarchive\.org$/i,
+  /(^|\.)archive\.org$/i
 ];
 
 export function escapeHTML(value) {

@@ -1,3 +1,5 @@
+const { normalizeListen } = require("./listenbrainz");
+
 const LEADERBOARD_TYPES = new Set(["artists", "albums", "tracks"]);
 
 function createValidationError(message) {
@@ -39,7 +41,7 @@ function normalizeChartItems(typeInput, value) {
   for (const row of rows) {
     const name = normalizeText(row?.name);
     const artist = type === "artists" ? null : extractArtistName(row?.artist);
-    const playcount = Math.max(0, Number.parseInt(row?.playcount || "0", 10) || 0);
+    const playcount = Math.max(0, Number.parseInt(row?.playcount ?? row?.listen_count ?? "0", 10) || 0);
 
     if (!name || playcount <= 0 || (type !== "artists" && !artist)) continue;
 
@@ -53,6 +55,67 @@ function normalizeChartItems(typeInput, value) {
     });
   }
 
+  return items;
+}
+
+// Builds chart items by aggregating raw ListenBrainz listens for a date range
+// (ListenBrainz stats only support fixed ranges, so arbitrary windows are
+// computed from the listens themselves).
+function buildChartItemsFromListens(typeInput, listens, { getArtistUrl, getAlbumUrl, getTrackUrl } = {}) {
+  const type = normalizeLeaderboardType(typeInput);
+  const counts = new Map();
+
+  for (const raw of Array.isArray(listens) ? listens : []) {
+    const listen = raw?.track_metadata ? normalizeListen(raw) : raw;
+    if (!listen?.artist || !listen?.track || !Number.isInteger(listen.playedAt)) continue;
+
+    let key;
+    let name;
+    let artist = null;
+    let mbid = null;
+
+    if (type === "artists") {
+      key = normalizeKey(listen.artist);
+      name = listen.artist;
+      mbid = listen.artistMbid;
+    } else if (type === "albums") {
+      if (!listen.album) continue;
+      key = compoundKey(listen.artist, listen.album);
+      name = listen.album;
+      artist = listen.artist;
+      mbid = listen.releaseMbid;
+    } else {
+      key = compoundKey(listen.artist, listen.track);
+      name = listen.track;
+      artist = listen.artist;
+      mbid = listen.recordingMbid;
+    }
+
+    const current = counts.get(key) || { name, artist, mbid, playcount: 0 };
+    current.playcount += 1;
+    counts.set(key, current);
+  }
+
+  const items = [];
+  for (const [key, value] of counts) {
+    if (value.playcount <= 0) continue;
+
+    let url = null;
+    if (type === "artists") url = getArtistUrl ? getArtistUrl(value.name, value.mbid) : null;
+    if (type === "albums") url = getAlbumUrl ? getAlbumUrl(value.artist, value.name, value.mbid) : null;
+    if (type === "tracks") url = getTrackUrl ? getTrackUrl(value.artist, value.name, value.mbid) : null;
+
+    items.push({
+      key,
+      name: value.name,
+      artist: value.artist,
+      playcount: value.playcount,
+      url,
+      mbid: value.mbid
+    });
+  }
+
+  items.sort((a, b) => b.playcount - a.playcount || a.name.localeCompare(b.name));
   return items;
 }
 
@@ -154,7 +217,7 @@ function normalizeGroupInput(payload, options = {}) {
     const username = normalizeText(typeof member === "string" ? member : member?.username);
     if (!username) continue;
     if (username.length > 64 || /\s/.test(username)) {
-      throw createValidationError(`Invalid Last.fm username: ${username}`);
+      throw createValidationError(`Invalid ListenBrainz username: ${username}`);
     }
 
     const key = normalizeKey(username);
@@ -175,6 +238,7 @@ function normalizeGroupInput(payload, options = {}) {
 
 module.exports = {
   aggregateMemberCharts,
+  buildChartItemsFromListens,
   compoundKey,
   extractArtistName,
   normalizeChartItems,

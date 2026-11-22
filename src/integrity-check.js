@@ -1,11 +1,8 @@
 require("dotenv").config();
 
-const axios = require("axios");
-
 const db = require("./db");
 const { sync } = require("./sync");
-const { fetchWithRetry } = require("./utils/fetchRetry");
-const { assertLastFmResponse } = require("./utils/lastfmResponse");
+const { getListenCount, getUsername } = require("./utils/listenbrainz");
 const { sanitizeError } = require("./utils/sanitizeAxios");
 const { getDeletedScrobblesCount } = require("./services/scrobbleDeletion");
 
@@ -16,44 +13,26 @@ const MISSING_THRESHOLD = Math.max(
 
 const getLocalCount = db.prepare("SELECT COUNT(*) AS count FROM scrobbles");
 
-async function getLastFmPlaycount() {
-  const response = await fetchWithRetry(async () => {
-    const result = await axios.get("https://ws.audioscrobbler.com/2.0/", {
-      timeout: Number(process.env.LASTFM_REQUEST_TIMEOUT_MS || 15000),
-      params: {
-        method: "user.getInfo",
-        user: process.env.LASTFM_USERNAME,
-        api_key: process.env.LASTFM_API_KEY,
-        format: "json"
-      }
-    });
-    assertLastFmResponse(result.data);
-    return result;
-  });
-
-  const playcount = Number.parseInt(response.data?.user?.playcount, 10);
-  if (!Number.isInteger(playcount) || playcount < 0) {
-    throw new Error("Last.fm returned an invalid user playcount");
-  }
-
-  return playcount;
+async function getRemoteListenCount() {
+  const count = await getListenCount(getUsername());
+  return count;
 }
 
 async function verifyIntegrity() {
   try {
-    const lastfmCount = await getLastFmPlaycount();
+    const listenbrainzCount = await getRemoteListenCount();
     const localCount = getLocalCount.get().count;
     const deletedCount = getDeletedScrobblesCount();
-    const difference = lastfmCount - deletedCount - localCount;
+    const difference = listenbrainzCount - deletedCount - localCount;
     const missingLocally = Math.max(0, difference);
     const extraLocally = Math.max(0, -difference);
 
     console.log(
-      `[Integrity] LastFM=${lastfmCount} Local=${localCount} Missing locally=${missingLocally} Extra locally=${extraLocally}`
+      `[Integrity] ListenBrainz=${listenbrainzCount} Local=${localCount} Missing locally=${missingLocally} Extra locally=${extraLocally}`
     );
 
     if (missingLocally < MISSING_THRESHOLD) {
-      return { checked: true, repaired: false, lastfmCount, localCount, missingLocally, extraLocally };
+      return { checked: true, repaired: false, listenbrainzCount, localCount, missingLocally, extraLocally };
     }
 
     console.log(
@@ -66,7 +45,7 @@ async function verifyIntegrity() {
         checked: true,
         repaired: false,
         deferred: true,
-        lastfmCount,
+        listenbrainzCount,
         localCount,
         missingLocally,
         extraLocally
@@ -74,7 +53,7 @@ async function verifyIntegrity() {
     }
 
     const repairedLocalCount = getLocalCount.get().count;
-    const remainingMissing = Math.max(0, lastfmCount - deletedCount - repairedLocalCount);
+    const remainingMissing = Math.max(0, listenbrainzCount - deletedCount - repairedLocalCount);
 
     console.log(
       `[Integrity] Repair finished. Local=${repairedLocalCount} Remaining missing=${remainingMissing}`
@@ -83,10 +62,10 @@ async function verifyIntegrity() {
     return {
       checked: true,
       repaired: true,
-      lastfmCount,
+      listenbrainzCount,
       localCount: repairedLocalCount,
       missingLocally: remainingMissing,
-      extraLocally: Math.max(0, repairedLocalCount - lastfmCount)
+      extraLocally: Math.max(0, repairedLocalCount - listenbrainzCount)
     };
   } catch (error) {
     console.error("[Integrity check error]", sanitizeError(error));

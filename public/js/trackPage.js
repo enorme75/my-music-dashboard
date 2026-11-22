@@ -115,13 +115,13 @@ function renderTrackPage(data) {
 
   renderTrackStats(data);
 
-  const lastfmLink = document.getElementById("track-lastfm");
-  if (lastfmLink) {
+  const listenbrainzLink = document.getElementById("track-listenbrainz");
+  if (listenbrainzLink) {
     if (data.url) {
-      lastfmLink.href = data.url;
-      lastfmLink.classList.remove("d-none");
+      listenbrainzLink.href = data.url;
+      listenbrainzLink.classList.remove("d-none");
     } else {
-      lastfmLink.classList.add("d-none");
+      listenbrainzLink.classList.add("d-none");
     }
   }
 

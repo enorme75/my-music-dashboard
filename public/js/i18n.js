@@ -109,11 +109,11 @@ const DICTIONARY = {
       fr: "Tout l'historique disponible",
       en: "All available history"
     },
-    openAlbumOnLastfm: { fr: "Ouvrir l'album sur Last.fm", en: "Open album on Last.fm" },
+    openAlbumOnListenbrainz: { fr: "Ouvrir l'album sur ListenBrainz", en: "Open album on ListenBrainz" },
     openAlbumOnDiscogs: { fr: "Ouvrir l'album sur Discogs", en: "Open album on Discogs" },
-    openArtistOnLastfm: { fr: "Ouvrir l'artiste sur Last.fm", en: "Open artist on Last.fm" },
+    openArtistOnListenbrainz: { fr: "Ouvrir l'artiste sur ListenBrainz", en: "Open artist on ListenBrainz" },
     openArtistOnDiscogs: { fr: "Ouvrir l'artiste sur Discogs", en: "Open artist on Discogs" },
-    openTrackOnLastfm: { fr: "Ouvrir le morceau sur Last.fm", en: "Open track on Last.fm" },
+    openTrackOnListenbrainz: { fr: "Ouvrir le morceau sur ListenBrainz", en: "Open track on ListenBrainz" },
     playsPerMonth: { fr: "Écoutes par mois", en: "Plays per Month" },
     playsPerYear: { fr: "Écoutes par année", en: "Plays per Year" },
     granDay: { fr: "Jour", en: "Day" },
@@ -187,7 +187,7 @@ const DICTIONARY = {
   },
   leaderboards: {
     title: { fr: "Classements personnalisés", en: "Custom Leaderboards" },
-    communityCharts: { fr: "Classements Last.fm", en: "Community charts" },
+    communityCharts: { fr: "Écoutes ListenBrainz", en: "Community charts" },
     createFirstGroup: { fr: "Créez votre premier groupe", en: "Create your first group" },
     groups: { fr: "Groupes", en: "Groups" },
     selectedGroup: { fr: "Groupe sélectionné", en: "Selected group" },
@@ -205,8 +205,8 @@ const DICTIONARY = {
       en: "Ignore cached data"
     },
     building: {
-      fr: "Construction des classements du groupe depuis Last.fm...",
-      en: "Building group charts from Last.fm..."
+      fr: "Construction des classements du groupe depuis ListenBrainz...",
+      en: "Building group charts from ListenBrainz..."
     },
     totalScrobbles: { fr: "Scrobbles totaux", en: "Total scrobbles" },
     membersWithData: { fr: "Membres avec données", en: "Members with data" },
@@ -218,8 +218,8 @@ const DICTIONARY = {
     leadsWith: { fr: "en tête avec", en: "leads with" },
     partialResult: { fr: "résultat partiel", en: "partial result" },
     staleCacheUsed: {
-      fr: "cache périmé utilisé après une erreur Last.fm",
-      en: "using stale cache after a Last.fm error"
+      fr: "cache périmé utilisé après une erreur ListenBrainz",
+      en: "using stale cache after a ListenBrainz error"
     },
     cacheStale: { fr: "Cache périmé", en: "Stale cache" },
     cached: { fr: "En cache", en: "Cached" },
@@ -234,7 +234,7 @@ const DICTIONARY = {
     editGroup: { fr: "Modifier le groupe de classement", en: "Edit leaderboard group" },
     groupName: { fr: "Nom du groupe", en: "Group name" },
     groupNamePlaceholder: { fr: "Auditeurs du week-end", en: "Weekend listeners" },
-    lastfmUsernames: { fr: "Noms d'utilisateur Last.fm", en: "Last.fm usernames" },
+    listenbrainzUsernames: { fr: "Noms d'utilisateur ListenBrainz", en: "ListenBrainz usernames" },
     addMe: { fr: "M'ajouter", en: "Add me" },
     memberPlaceholder: {
       fr: "Saisissez un nom d'utilisateur puis Entrée",
@@ -246,12 +246,12 @@ const DICTIONARY = {
     createGroupButton: { fr: "Créer le groupe", en: "Create group" },
     groupNameRequired: { fr: "Le nom du groupe est requis", en: "Group name is required" },
     addTwoUsers: {
-      fr: "Ajoutez au moins deux utilisateurs Last.fm",
-      en: "Add at least two Last.fm users"
+      fr: "Ajoutez au moins deux utilisateurs ListenBrainz",
+      en: "Add at least two ListenBrainz users"
     },
     usernamesNoSpaces: {
-      fr: "Les noms d'utilisateur Last.fm ne peuvent pas contenir d'espaces",
-      en: "Last.fm usernames cannot contain spaces"
+      fr: "Les noms d'utilisateur ListenBrainz ne peuvent pas contenir d'espaces",
+      en: "ListenBrainz usernames cannot contain spaces"
     },
     itemDetails: { fr: "Détails", en: "Item details" },
     loadingTopTracks: { fr: "Chargement des top morceaux...", en: "Loading top tracks..." },
@@ -402,10 +402,14 @@ const DICTIONARY = {
       fr: "Reprise de la synchronisation interrompue...",
       en: "Resuming interrupted synchronization..."
     },
-    connecting: { fr: "Connexion à Last.fm...", en: "Connecting to Last.fm..." },
+    connecting: { fr: "Connexion à ListenBrainz...", en: "Connecting to ListenBrainz..." },
     page: {
       fr: "Synchronisation : page {page} sur {totalPages} ({percent} %)",
       en: "Syncing page {page} of {totalPages} ({percent}%)"
+    },
+    batch: {
+      fr: "Synchronisation : {count} écoutes récupérées (batch {page})",
+      en: "Syncing: {count} listens fetched (batch {page})"
     },
     completed: {
       fr: "Synchronisation terminée : {count} nouveaux scrobbles",

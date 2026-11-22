@@ -5,7 +5,7 @@ const path = require("path");
 
 const db = require("../db");
 const { fetchWithRetry } = require("../utils/fetchRetry");
-const { normalizeImageUrl } = require("../utils/lastfmImage");
+const { isAllowedRemoteImageHost, normalizeImageUrl } = require("../utils/imageUrl");
 
 const cacheDir = path.join(db.dataDir, "image-cache");
 const maxImageBytes = Math.max(1024, Number(process.env.SHARE_IMAGE_MAX_BYTES) || 10 * 1024 * 1024);
@@ -14,14 +14,10 @@ const failureTtlMs = Math.max(60000, Number(process.env.IMAGE_FAILURE_CACHE_MS) 
 const inFlight = new Map();
 const failedUntil = new Map();
 
-const ALLOWED_HOSTS = new Set([
-  "lastfm.freetls.fastly.net",
-  "lastfm-img2.akamaized.net",
-  "img2-ak.lst.fm",
-  "userserve-ak.last.fm",
-  "cdn-images.dzcdn.net",
-  "e-cdns-images.dzcdn.net"
-]);
+// Hosts allowed through the image proxy. Besides the legacy Last.fm/Deezer
+// CDNs (covers cached before the ListenBrainz migration still point there),
+// this includes coverartarchive.org and *.archive.org where CAA redirects.
+const ALLOWED_HOSTS = isAllowedRemoteImageHost;
 
 const CONTENT_TYPES = new Set([
   "image/avif",
@@ -37,7 +33,7 @@ function parseAllowedRemoteImageUrl(source) {
 
   try {
     const parsed = new URL(normalized);
-    if (parsed.protocol !== "https:" || !ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) {
+    if (parsed.protocol !== "https:" || !ALLOWED_HOSTS(parsed.hostname)) {
       return null;
     }
     return parsed.toString();
@@ -81,7 +77,7 @@ function validateRedirect(options) {
   const protocol = String(options.protocol || "").toLowerCase();
   const hostname = String(options.hostname || options.host || "").toLowerCase();
 
-  if (protocol !== "https:" || !ALLOWED_HOSTS.has(hostname)) {
+  if (protocol !== "https:" || !ALLOWED_HOSTS(hostname)) {
     throw new Error("Remote image redirect is not allowed");
   }
 }

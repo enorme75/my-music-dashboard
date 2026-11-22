@@ -30,7 +30,7 @@ function songCopy(row) {
         href="${escapeAttribute(row.url || "#")}"
         target="_blank"
         rel="noopener noreferrer"
-        title="${t("dashboard.openTrackOnLastfm")}"
+        title="${t("dashboard.openTrackOnListenbrainz")}"
       >
         <i class="mdi mdi-open-in-new"></i>
       </a>

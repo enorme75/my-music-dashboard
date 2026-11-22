@@ -1,17 +1,18 @@
 # YourLastFM
 
-YourLastFM is a self-hosted Node.js dashboard that synchronizes your Last.fm scrobbles into SQLite, displays listening statistics, compares your taste with friends, builds custom group leaderboards, and generates shareable recap images.
+YourLastFM is a self-hosted Node.js dashboard that synchronizes your ListenBrainz listens into SQLite, displays listening statistics, compares your taste with friends, builds custom group leaderboards, and generates shareable recap images.
 
 ## Features
 
-- Incremental Last.fm synchronization with a configurable overlap window.
+- Incremental ListenBrainz synchronization with a configurable overlap window (windowed `listens` API, up to 1000 listens per request).
 - Automatic first full sync when the database is empty.
-- Cross-process sync lock, resumable sync windows, progress reporting, retries, and a daily integrity check.
-- Dashboard with top artists, albums, tracks, daily activity, previous-period trends, a local-time Listening Clock, account statistics, and recent scrobbles.
-- Direct Last.fm links for artists, albums, and tracks.
+- Cross-process sync lock, resumable sync windows, progress reporting, retries, and a daily integrity check against the ListenBrainz listen count.
+- Dashboard with top artists, albums, tracks, daily activity, previous-period trends, a local-time Listening Clock, account statistics, and recent listens (with playing-now).
+- Direct ListenBrainz links for artists, releases, and tracks (exact MBID pages when known, search fallback otherwise).
+- MusicBrainz IDs, durations, and release data stored with each listen; Cover Art Archive covers with Deezer fallback.
 - Persistent SQLite dashboard cache invalidated after syncs, imports, and manual cover changes.
-- Last.fm friends comparison with common artists, albums, and tracks, including resilient artwork and avatar fallbacks.
-- Custom local leaderboard groups with public Last.fm users, exact date ranges, member standings, combined artist/album/track charts, and top-track drill-downs.
+- ListenBrainz followings list and comparison with common artists, albums, and tracks (ListenBrainz stats API), including resilient artwork fallbacks.
+- Custom local leaderboard groups with public ListenBrainz users, exact date ranges (computed from raw listens), member standings, combined artist/album/track charts, and top-track drill-downs.
 - Standard and Instagram Story recap images generated on the server.
 - Automatic album/artist image lookup, persistent image cache, and manual album-cover uploads.
 - CSV import and streaming CSV export.
@@ -20,9 +21,9 @@ YourLastFM is a self-hosted Node.js dashboard that synchronizes your Last.fm scr
 ## Requirements
 
 - Docker and Docker Compose, or Node.js 22 with the native dependencies required by `canvas` and `better-sqlite3`.
-- A Last.fm API key.
+- A ListenBrainz account. Reading listens is public, so only the username is required; the user token (https://listenbrainz.org/settings/) is optional and only used server-side to validate the configuration.
 
-Create an API account at the Last.fm API website and copy `.env.example` to `.env`:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
@@ -31,9 +32,12 @@ cp .env.example .env
 At minimum, configure:
 
 ```env
-LASTFM_API_KEY=your_lastfm_api_key
-LASTFM_USERNAME=your_lastfm_username
+LISTENBRAINZ_USERNAME=your_listenbrainz_username
+# optional, never exposed to the browser:
+LISTENBRAINZ_USER_TOKEN=your_listenbrainz_user_token
 ```
+
+To migrate an existing Last.fm database: keep the same `data/` directory. The `scrobbles` table is reused as-is and gains `artist_mbid` / `release_mbid` / `recording_mbid` columns (NULL for historical rows); new syncs from ListenBrainz backfill MBIDs and durations on matching rows.
 
 ## Run with Docker Compose
 
@@ -56,7 +60,7 @@ Open:
 http://localhost:1533
 ```
 
-The API starts immediately. Synchronization runs in a separate managed process, so a large initial history import does not keep the web interface offline. If a Last.fm page keeps failing after all retries, the original `from`/`to` window is persisted and retried on the next run instead of advancing past the missing page.
+The API starts immediately. Synchronization runs in a separate managed process, so a large initial history import does not keep the web interface offline. If a ListenBrainz page keeps failing after all retries, the original `from`/`to` window is persisted and retried on the next run instead of advancing past the missing page.
 
 Useful commands:
 
@@ -102,24 +106,31 @@ The defaults are documented in `.env.example`.
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
+| `LISTENBRAINZ_USERNAME` | ListenBrainz user whose listens are synchronized | required |
+| `LISTENBRAINZ_USER_TOKEN` | Optional user token (validate-token); server-side only | empty |
+| `LISTENBRAINZ_API_URL` | API base URL (override for a self-hosted instance) | `https://api.listenbrainz.org/1` |
+| `LISTENBRAINZ_WEB_URL` | Web base URL used for links in the UI | `https://listenbrainz.org` |
 | `PORT` | HTTP port | `1533` |
 | `SYNC_CRON` | Incremental sync schedule | `*/5 * * * *` |
-| `INTEGRITY_CRON` | Last.fm/local count check | `0 3 * * *` |
-| `INTEGRITY_MISSING_THRESHOLD` | Missing scrobbles required before the integrity check starts a full repair sync | `1` |
-| `SYNC_OVERLAP_SECONDS` | Re-fetch window used to safely catch late scrobbles | `86400` |
-| `LASTFM_REQUEST_DELAY_MS` | Delay between Last.fm history pages | `250` |
-| `LASTFM_REQUEST_TIMEOUT_MS` | Last.fm request timeout | `15000` |
+| `INTEGRITY_CRON` | ListenBrainz/local count check | `0 3 * * *` |
+| `INTEGRITY_MISSING_THRESHOLD` | Missing listens required before the integrity check starts a full repair sync | `1` |
+| `SYNC_OVERLAP_SECONDS` | Re-fetch window used to safely catch late listens | `86400` |
+| `LISTENBRAINZ_REQUEST_DELAY_MS` | Delay between ListenBrainz listen batches | `1000` |
+| `LISTENBRAINZ_REQUEST_TIMEOUT_MS` | ListenBrainz request timeout | `15000` |
+| `LISTENBRAINZ_MAX_LISTENS_PER_REQUEST` | Batch size for the listens API (server caps at 1000) | `1000` |
+| `MUSICBRAINZ_REQUEST_DELAY_MS` | Delay between MusicBrainz requests (1 req/s max) | `1100` |
+| `ARTIST_BIO_LANG` | Language of artist bios (Wikipedia); English Wikipedia is richer, so `en` is the default | `en` |
 | `DASHBOARD_CACHE_TTL_MS` | Persistent dashboard cache lifetime in milliseconds; `0` disables time-based expiry | `300000` |
 | `STATIC_ASSET_CACHE_SECONDS` | Browser cache lifetime for local JavaScript, CSS, and images | `300` |
 | `LEADERBOARD_CACHE_TTL_MS` | Persistent lifetime for generated leaderboard results; `0` disables time-based expiry | `900000` |
-| `LEADERBOARD_PROFILE_TTL_MS` | Lifetime of cached Last.fm user profiles | `86400000` |
+| `LEADERBOARD_PROFILE_TTL_MS` | Lifetime of cached ListenBrainz user profiles | `86400000` |
 | `LEADERBOARD_ALBUM_TTL_MS` | Lifetime of cached album track lists | `2592000000` |
-| `LEADERBOARD_REQUEST_CONCURRENCY` | Concurrent Last.fm requests while building group charts | `4` |
+| `LEADERBOARD_REQUEST_CONCURRENCY` | Concurrent ListenBrainz requests while building group charts | `4` |
 | `LEADERBOARD_MAX_GROUPS` | Maximum local leaderboard groups | `50` |
-| `LEADERBOARD_MAX_MEMBERS` | Maximum Last.fm users in one group | `20` |
+| `LEADERBOARD_MAX_MEMBERS` | Maximum ListenBrainz users in one group | `20` |
 | `LEADERBOARD_MAX_RANGE_DAYS` | Maximum inclusive leaderboard date range | `366` |
 | `EXTERNAL_REQUEST_CONCURRENCY` | Concurrent metadata/image lookups | `4` |
-| `FRIENDS_CACHE_TTL_MS` | In-memory cache lifetime for the Last.fm friends list | `300000` |
+| `FRIENDS_CACHE_TTL_MS` | In-memory cache lifetime for the ListenBrainz followings list | `300000` |
 | `IMAGE_FAILURE_CACHE_MS` | Time before retrying an image lookup that returned nothing | `600000` |
 | `METADATA_FAILURE_CACHE_MS` | Time before retrying missing track metadata | `600000` |
 | `SHARE_IMAGE_CONCURRENCY` | Concurrent recap image loads | `4` |
@@ -141,7 +152,7 @@ Rolling periods compare against the immediately preceding equivalent window. The
 
 ## Custom leaderboards
 
-Open **Leaderboards** from the sidebar, create a group, and add at least two public Last.fm usernames. The username configured in `LASTFM_USERNAME` can be added with the **Add me** button.
+Open **Leaderboards** from the sidebar, create a group, and add at least two public ListenBrainz usernames. The username configured in `LISTENBRAINZ_USERNAME` can be added with the **Add me** button.
 
 Each group supports:
 
@@ -150,9 +161,9 @@ Each group supports:
 - artist, album, and track rankings;
 - member standings and per-item contribution counts;
 - artist and album drill-downs for the group's most-played tracks;
-- direct links to the corresponding Last.fm pages.
+- direct links to the corresponding ListenBrainz pages.
 
-Groups and their caches are stored locally in `stats.db`; no separate account system or external YourLastFM service is involved. Last.fm requests are concurrency-limited, retried, and cached. If one member temporarily fails, the remaining data is still displayed as a partial result. Use **Refresh** to bypass the current chart cache.
+Groups and their caches are stored locally in `stats.db`; no separate account system or external YourLastFM service is involved. Because ListenBrainz statistics only expose fixed ranges, arbitrary date ranges are computed by aggregating the members' raw listens for the window; requests are concurrency-limited, retried, and cached. If one member temporarily fails, the remaining data is still displayed as a partial result. Use **Refresh** to bypass the current chart cache.
 
 ## Data and backups
 

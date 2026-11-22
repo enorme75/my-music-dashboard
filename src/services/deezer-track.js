@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { fetchWithRetry } = require("../utils/fetchRetry");
-const { normalizeImageUrl } = require("../utils/lastfmImage");
+const { normalizeImageUrl } = require("../utils/imageUrl");
 const { normalize, isReasonableMatch } = require("../utils/normalizeText");
 
 const DEEZER_SEARCH_URL = "https://api.deezer.com/search/track";

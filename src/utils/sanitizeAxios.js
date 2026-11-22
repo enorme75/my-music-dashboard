@@ -14,6 +14,15 @@ function sanitizeAxiosConfig(config) {
     };
   }
 
+  if (config.headers) {
+    sanitized.headers = { ...config.headers };
+    for (const name of Object.keys(sanitized.headers)) {
+      if (name.toLowerCase() === "authorization") {
+        sanitized.headers[name] = "***REDACTED***";
+      }
+    }
+  }
+
   if (config.url) sanitized.url = redactApiKey(config.url);
   return sanitized;
 }

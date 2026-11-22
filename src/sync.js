@@ -1,22 +1,28 @@
 require("dotenv").config();
 
-const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 
 const db = require("./db");
 const { fetchWithRetry } = require("./utils/fetchRetry");
-const { assertLastFmResponse } = require("./utils/lastfmResponse");
+const {
+  MAX_LISTENS_PER_REQUEST,
+  REQUEST_TIMEOUT,
+  USER_AGENT,
+  getListens,
+  getUsername,
+  normalizeListen,
+  validateConfiguration
+} = require("./utils/listenbrainz");
 const { sanitizeError } = require("./utils/sanitizeAxios");
 const { parseSyncCheckpoint, resolveSyncWindow } = require("./utils/syncWindow");
 const { invalidateDashboardCache } = require("./services/dashboardCache");
 const { isDeletedScrobble } = require("./services/scrobbleDeletion");
 
 const CONFIG = {
-  API_URL: "https://ws.audioscrobbler.com/2.0/",
-  REQUEST_DELAY: Number(process.env.LASTFM_REQUEST_DELAY_MS || 250),
-  REQUEST_TIMEOUT: Number(process.env.LASTFM_REQUEST_TIMEOUT_MS || 15000),
-  PER_PAGE: 200,
+  REQUEST_DELAY: Math.max(0, Number(process.env.LISTENBRAINZ_REQUEST_DELAY_MS || 1000)),
+  REQUEST_TIMEOUT,
+  PER_PAGE: MAX_LISTENS_PER_REQUEST,
   OVERLAP_SECONDS: Number(process.env.SYNC_OVERLAP_SECONDS || 86400),
   STALE_LOCK_MS: Number(process.env.SYNC_STALE_LOCK_MS || 2 * 60 * 60 * 1000)
 };
@@ -27,8 +33,23 @@ const CHECKPOINT_KEY = "sync_checkpoint";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const insertScrobble = db.prepare(`
-  INSERT OR IGNORE INTO scrobbles (artist, track, album, played_at)
-  VALUES (?, ?, ?, ?)
+  INSERT OR IGNORE INTO scrobbles (
+    artist, track, album, played_at, track_duration,
+    artist_mbid, release_mbid, recording_mbid
+  )
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`);
+
+// A listen already known locally (e.g. imported from the previous Last.fm
+// source) still benefits from the MBIDs/duration carried by ListenBrainz.
+const backfillScrobbleMetadata = db.prepare(`
+  UPDATE scrobbles
+  SET
+    track_duration = COALESCE(?, track_duration),
+    artist_mbid = COALESCE(?, artist_mbid),
+    release_mbid = COALESCE(?, release_mbid),
+    recording_mbid = COALESCE(?, recording_mbid)
+  WHERE artist = ? AND track = ? AND played_at = ?
 `);
 
 const getLastPlayedAt = db.prepare(`
@@ -53,40 +74,41 @@ const deleteMetadata = db.prepare(`
   WHERE key = ?
 `);
 
-const runSyncTransaction = db.transaction(tracks => {
+const runSyncTransaction = db.transaction(listens => {
   let inserted = 0;
   let skipped = 0;
 
-  for (const track of tracks) {
-    const artist = track.artist?.["#text"]?.trim();
-    const name = track.name?.trim();
-    const album = track.album?.["#text"]?.trim() || null;
-    const playedAt = Number(track.date?.uts);
+  for (const raw of listens) {
+    const listen = normalizeListen(raw);
+    const { artist, track, album, playedAt, duration, artistMbid, releaseMbid, recordingMbid } = listen;
 
-    if (!artist || !name || !Number.isInteger(playedAt) || playedAt <= 0) {
+    if (!artist || !track || !Number.isInteger(playedAt) || playedAt <= 0) {
       skipped++;
       continue;
     }
 
-    if (isDeletedScrobble(artist, name, playedAt)) {
+    if (isDeletedScrobble(artist, track, playedAt)) {
       skipped++;
       continue;
     }
 
-    const result = insertScrobble.run(artist, name, album, playedAt);
-    if (result.changes > 0) inserted++;
+    const result = insertScrobble.run(
+      artist, track, album, playedAt, duration,
+      artistMbid, releaseMbid, recordingMbid
+    );
+
+    if (result.changes > 0) {
+      inserted++;
+    } else {
+      backfillScrobbleMetadata.run(duration, artistMbid, releaseMbid, recordingMbid, artist, track, playedAt);
+      skipped++;
+    }
   }
 
   return { inserted, skipped };
 });
 
 let localSyncPromise = null;
-
-function validateConfiguration() {
-  if (!process.env.LASTFM_API_KEY || !process.env.LASTFM_USERNAME) {
-    throw new Error("LASTFM_API_KEY and LASTFM_USERNAME must be configured");
-  }
-}
 
 function saveSyncStatus(status) {
   setMetadata.run(STATUS_KEY, JSON.stringify({
@@ -213,35 +235,20 @@ function refreshSyncLock(lock) {
   }
 }
 
-async function fetchLastfmPage({ page, from, to }) {
+// One ListenBrainz "page": up to PER_PAGE listens inside [from, maxTs].
+async function fetchListensPage({ from, maxTs }) {
   try {
-    const params = {
-      method: "user.getrecenttracks",
-      user: process.env.LASTFM_USERNAME,
-      api_key: process.env.LASTFM_API_KEY,
-      format: "json",
-      limit: CONFIG.PER_PAGE,
-      page,
-      to
-    };
-
-    if (from > 0) params.from = from;
-
-    const response = await fetchWithRetry(async () => {
-      const result = await axios.get(CONFIG.API_URL, {
-        timeout: CONFIG.REQUEST_TIMEOUT,
-        params
+    return await fetchWithRetry(async () => {
+      const payload = await getListens({
+        user: getUsername(),
+        minTs: from,
+        maxTs,
+        count: CONFIG.PER_PAGE
       });
-      assertLastFmResponse(result.data);
-      return result;
+      return payload;
     });
-
-    const data = response.data;
-    if (!data?.recenttracks) throw new Error("Last.fm returned an invalid recent tracks response");
-
-    return data.recenttracks;
   } catch (error) {
-    console.error("[Last.fm sync error]", sanitizeError(error));
+    console.error("[ListenBrainz sync error]", sanitizeError(error));
     throw error;
   }
 }
@@ -266,77 +273,75 @@ async function runSync(options, lock) {
     resumed
       ? `↩️ Resuming ${mode} sync window from ${from} to ${to}...`
       : isFullSync
-        ? "🔄 Starting FULL sync with Last.fm..."
+        ? "🔄 Starting FULL sync with ListenBrainz..."
         : `🔄 Starting incremental sync from ${from || "the beginning"}...`
   );
 
   let totalInserted = 0;
   let totalSkipped = 0;
-  let totalPages = 1;
   let currentPage = 0;
+  let cursorMax = to;
   const startedAt = Date.now();
 
   saveSyncStatus({
     running: true,
     mode,
     page: 0,
-    totalPages,
+    totalPages: 0,
     inserted: 0,
     skipped: 0,
     startedAt,
     resumed,
     from,
     to,
-    message: resumed ? "Reprise de la synchronisation interrompue..." : "Connexion à Last.fm...",
+    message: resumed ? "Reprise de la synchronisation interrompue..." : "Connexion à ListenBrainz...",
     messageKey: resumed ? "sync.resuming" : "sync.connecting"
   });
 
   try {
-    const firstPage = await fetchLastfmPage({ page: 1, from, to });
-    const parsedTotalPages = Number.parseInt(firstPage["@attr"]?.totalPages || "1", 10);
-    totalPages = Number.isInteger(parsedTotalPages) && parsedTotalPages > 0
-      ? parsedTotalPages
-      : 1;
+    // ListenBrainz has no total page count: we walk the [from, to] window
+    // backwards, one batch of PER_PAGE listens per request, until a batch
+    // comes back short (or empty).
+    for (;;) {
+      currentPage += 1;
+      const payload = await fetchListensPage({ from, maxTs: cursorMax });
+      const batch = Array.isArray(payload?.listens) ? payload.listens : [];
 
-    for (let page = 1; page <= totalPages; page++) {
-      currentPage = page;
-      const pageData = page === 1
-        ? firstPage
-        : await fetchLastfmPage({ page, from, to });
+      if (batch.length) {
+        const result = runSyncTransaction(batch);
+        totalInserted += result.inserted;
+        totalSkipped += result.skipped;
+      }
 
-      const tracks = Array.isArray(pageData.track)
-        ? pageData.track
-        : pageData.track
-          ? [pageData.track]
-          : [];
-
-      const result = runSyncTransaction(tracks);
-      totalInserted += result.inserted;
-      totalSkipped += result.skipped;
       refreshSyncLock(lock);
 
-      const percent = Math.round((page / totalPages) * 100);
       saveSyncStatus({
         running: true,
         mode,
-        page,
-        totalPages,
+        page: currentPage,
+        totalPages: 0,
         inserted: totalInserted,
         skipped: totalSkipped,
         startedAt,
         resumed,
         from,
         to,
-        message: `Synchronisation : page ${page} sur ${totalPages} (${percent}%)`,
-        messageKey: "sync.page",
-        messageParams: { page, totalPages, percent }
+        message: `Synchronisation : ${totalInserted + totalSkipped} écoutes récupérées (batch ${currentPage})`,
+        messageKey: "sync.batch",
+        messageParams: { count: totalInserted + totalSkipped, page: currentPage }
       });
 
-      if (page === 1 || page === totalPages || page % 10 === 0) {
-        console.log(`[${page}/${totalPages}] ${percent}% - ${totalInserted} new`);
+      if (currentPage === 1 || currentPage % 10 === 0) {
+        console.log(`[batch ${currentPage}] ${totalInserted} new, ${totalSkipped} skipped`);
       }
 
-      if (page < totalPages && CONFIG.REQUEST_DELAY > 0) {
+      if (batch.length < CONFIG.PER_PAGE) break;
+
+      const oldest = Math.min(...batch.map(listen => Number(listen?.listened_at) || 0));
+      cursorMax = oldest - 1;
+      if (cursorMax < from) break;
+
+      if (CONFIG.REQUEST_DELAY > 0) {
         await sleep(CONFIG.REQUEST_DELAY);
       }
     }
@@ -348,8 +353,8 @@ async function runSync(options, lock) {
     saveSyncStatus({
       running: false,
       mode,
-      page: totalPages,
-      totalPages,
+      page: currentPage,
+      totalPages: 0,
       inserted: totalInserted,
       skipped: totalSkipped,
       startedAt,
@@ -368,7 +373,7 @@ async function runSync(options, lock) {
       started: true,
       running: false,
       mode,
-      totalPages,
+      totalPages: currentPage,
       inserted: totalInserted,
       skipped: totalSkipped,
       resumed,
@@ -380,7 +385,7 @@ async function runSync(options, lock) {
       running: false,
       mode,
       page: currentPage,
-      totalPages,
+      totalPages: 0,
       inserted: totalInserted,
       skipped: totalSkipped,
       startedAt,

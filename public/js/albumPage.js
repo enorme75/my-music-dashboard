@@ -123,7 +123,7 @@ function renderFullTracklist(data, tracklist) {
             href="${escapeAttribute(local.best.url || "#")}"
             target="_blank"
             rel="noopener noreferrer"
-            title="${escapeAttribute(t("dashboard.openTrackOnLastfm"))}"
+            title="${escapeAttribute(t("dashboard.openTrackOnListenbrainz"))}"
           >
             <i class="mdi mdi-open-in-new"></i>
           </a>
@@ -148,7 +148,7 @@ function renderFullTracklist(data, tracklist) {
             href="${escapeAttribute(entry.best.url || "#")}"
             target="_blank"
             rel="noopener noreferrer"
-            title="${escapeAttribute(t("dashboard.openTrackOnLastfm"))}"
+            title="${escapeAttribute(t("dashboard.openTrackOnListenbrainz"))}"
           >
             <i class="mdi mdi-open-in-new"></i>
           </a>
@@ -167,12 +167,12 @@ function renderTracks(data) {
   if (!container) return;
 
   // Full album tracklist (original order) when an external source provides
-  // one: Discogs first, then Last.fm. Tracks never played locally are dimmed
+  // one: Discogs first, then MusicBrainz. Tracks never played locally are dimmed
   // but still get a play button.
   const fullTracklist = (Array.isArray(data.discogsTracklist) && data.discogsTracklist.length)
     ? data.discogsTracklist
-    : (Array.isArray(data.lastfmTracklist) && data.lastfmTracklist.length)
-      ? data.lastfmTracklist
+    : (Array.isArray(data.externalTracklist) && data.externalTracklist.length)
+      ? data.externalTracklist
       : null;
 
   if (fullTracklist) {
@@ -190,7 +190,7 @@ function renderTracks(data) {
           href="${escapeAttribute(row.url || "#")}"
           target="_blank"
           rel="noopener noreferrer"
-          title="${escapeAttribute(t("dashboard.openTrackOnLastfm"))}"
+          title="${escapeAttribute(t("dashboard.openTrackOnListenbrainz"))}"
         >
           <i class="mdi mdi-open-in-new"></i>
         </a>
@@ -221,13 +221,13 @@ function renderAlbumPage(data) {
 
   renderAlbumStats(data);
 
-  const lastfmLink = document.getElementById("album-lastfm");
-  if (lastfmLink) {
+  const listenbrainzLink = document.getElementById("album-listenbrainz");
+  if (listenbrainzLink) {
     if (data.url) {
-      lastfmLink.href = data.url;
-      lastfmLink.classList.remove("d-none");
+      listenbrainzLink.href = data.url;
+      listenbrainzLink.classList.remove("d-none");
     } else {
-      lastfmLink.classList.add("d-none");
+      listenbrainzLink.classList.add("d-none");
     }
   }
 

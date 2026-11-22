@@ -1,8 +1,8 @@
 const db = require("../db");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { getDeezerTrackImage } = require("./deezer-track");
-const { getTrackCoverInfo } = require("./lastfm-track");
-const { isUsableImageUrl, normalizeImageUrl } = require("../utils/lastfmImage");
+const { getTrackCoverInfo } = require("./trackMetadata");
+const { isUsableImageUrl, normalizeImageUrl } = require("../utils/imageUrl");
 
 const getTrackRows = db.prepare(`
   SELECT album, album_image

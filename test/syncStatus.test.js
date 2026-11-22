@@ -26,7 +26,7 @@ function writeRunningStatus() {
     totalPages: 1,
     inserted: 0,
     skipped: 0,
-    message: "Connexion à Last.fm...",
+    message: "Connexion à ListenBrainz...",
     messageKey: "sync.connecting",
     updatedAt: Date.now()
   }));

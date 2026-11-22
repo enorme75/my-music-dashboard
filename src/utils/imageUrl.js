@@ -1,25 +1,36 @@
+// Generic remote-image URL helpers. The Last.fm placeholder hashes are kept so
+// that covers cached before the ListenBrainz migration are still recognized as
+// unusable instead of being displayed as broken images.
 const LASTFM_PLACEHOLDER_PATTERNS = [
   "2a96cbd8b46e442fc41c2b86b821562f",
   "4128a6eb29f94943c9d206c08e625904"
 ];
 
+// Hosts whose plain-HTTP image URLs are upgraded to HTTPS.
 const HTTPS_IMAGE_HOSTS = new Set([
   "lastfm.freetls.fastly.net",
   "lastfm-img2.akamaized.net",
   "img2-ak.lst.fm",
   "userserve-ak.last.fm",
   "cdn-images.dzcdn.net",
-  "e-cdns-images.dzcdn.net"
+  "e-cdns-images.dzcdn.net",
+  "coverartarchive.org",
+  "archive.org"
 ]);
 
-const IMAGE_SIZE_PRIORITY = new Map([
-  ["mega", 6],
-  ["extralarge", 5],
-  ["large", 4],
-  ["medium", 3],
-  ["small", 2],
-  ["", 1]
-]);
+// Host patterns allowed for remote images fetched through /api/image-proxy.
+// Kept as patterns because Cover Art Archive redirects to *.archive.org.
+const REMOTE_IMAGE_HOST_PATTERNS = [
+  /(^|\.)last\.fm$/i,
+  /(^|\.)lastfm\.freetls\.fastly\.net$/i,
+  /(^|\.)lastfm-img2\.akamaized\.net$/i,
+  /(^|\.)img2-ak\.lst\.fm$/i,
+  /(^|\.)userserve-ak\.last\.fm$/i,
+  /(^|\.)dzcdn\.net$/i,
+  /(^|\.)deezer\.com$/i,
+  /(^|\.)coverartarchive\.org$/i,
+  /(^|\.)archive\.org$/i
+];
 
 function normalizeImageUrl(value) {
   const raw = String(value || "").trim();
@@ -30,8 +41,7 @@ function normalizeImageUrl(value) {
     const parsed = new URL(raw);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
 
-    // Last.fm's older API examples and some responses still use HTTP URLs.
-    // Upgrade only known image CDNs, preserving arbitrary user-provided URLs.
+    // Older cached payloads sometimes use HTTP; upgrade the known CDNs only.
     if (parsed.protocol === "http:" && HTTPS_IMAGE_HOSTS.has(parsed.hostname.toLowerCase())) {
       parsed.protocol = "https:";
     }
@@ -52,29 +62,15 @@ function isUsableImageUrl(value) {
   return Boolean(url && !isLastFmPlaceholder(url));
 }
 
-function getImageEntryUrl(entry) {
-  if (typeof entry === "string") return entry;
-  if (!entry || typeof entry !== "object") return null;
-  return entry["#text"] || entry.url || entry.src || null;
-}
-
-function getLastFmImage(images, options = {}) {
-  const allowPlaceholder = options.allowPlaceholder === true;
-  const entries = Array.isArray(images) ? images : images ? [images] : [];
-
-  return entries
-    .map((entry, index) => ({
-      url: normalizeImageUrl(getImageEntryUrl(entry)),
-      priority: IMAGE_SIZE_PRIORITY.get(String(entry?.size || "").toLowerCase()) || 0,
-      index
-    }))
-    .filter(item => item.url && (allowPlaceholder || !isLastFmPlaceholder(item.url)))
-    .sort((a, b) => b.priority - a.priority || b.index - a.index)[0]?.url || null;
+function isAllowedRemoteImageHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return REMOTE_IMAGE_HOST_PATTERNS.some(pattern => pattern.test(host));
 }
 
 module.exports = {
   LASTFM_PLACEHOLDER_PATTERNS,
-  getLastFmImage,
+  REMOTE_IMAGE_HOST_PATTERNS,
+  isAllowedRemoteImageHost,
   isLastFmPlaceholder,
   isUsableImageUrl,
   normalizeImageUrl

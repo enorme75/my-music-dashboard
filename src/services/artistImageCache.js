@@ -1,6 +1,6 @@
 const db = require("../db");
 const { fetchArtistImage } = require("./deezerArtistImage");
-const { isUsableImageUrl, normalizeImageUrl } = require("../utils/lastfmImage");
+const { isUsableImageUrl, normalizeImageUrl } = require("../utils/imageUrl");
 
 const getCachedImage = db.prepare(`
   SELECT artist, artist_image, updated_at

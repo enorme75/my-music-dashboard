@@ -4,7 +4,7 @@ const db = require("../db");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureArtistImage } = require("./artistImageCache");
 const { ensureTrackCover } = require("./trackCoverCache");
-const { getLastFmUserInfo } = require("./lastfm-username");
+const { getListenBrainzUserInfo } = require("./listenbrainz-user");
 const { loadShareImage } = require("./shareImageLoader");
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
 
@@ -482,7 +482,7 @@ async function generateShareImage(rawOptions) {
     const limits = getLimits(isStory);
 
     const [username, rawData] = await Promise.all([
-      getLastFmUserInfo(),
+      getListenBrainzUserInfo(),
       Promise.resolve(queryShareData(start, options.types, limits))
     ]);
 

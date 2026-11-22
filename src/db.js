@@ -31,6 +31,9 @@ db.prepare(`
     album TEXT,
     album_image TEXT,
     played_at INTEGER NOT NULL,
+    artist_mbid TEXT,
+    release_mbid TEXT,
+    recording_mbid TEXT,
     UNIQUE(artist, track, played_at)
   )
 `).run();
@@ -57,10 +60,20 @@ db.prepare(`
     artist TEXT PRIMARY KEY,
     lang TEXT,
     bio TEXT,
-    lastfm_url TEXT,
+    listenbrainz_url TEXT,
     updated_at INTEGER
   )
 `).run();
+
+// Migration from the Last.fm source: the artist_info.url column used to hold a
+// last.fm URL. Rename it and drop the stale rows so they are re-fetched from
+// ListenBrainz/MusicBrainz with fresh links.
+const artistInfoColumns = db.prepare("PRAGMA table_info(artist_info)").all();
+if (artistInfoColumns.some(column => column.name === "lastfm_url")) {
+  db.prepare("ALTER TABLE artist_info RENAME COLUMN lastfm_url TO listenbrainz_url").run();
+  db.prepare("DELETE FROM artist_info").run();
+  console.log("✅ artist_info.lastfm_url renamed to listenbrainz_url (cache cleared)");
+}
 
 db.prepare(`
   CREATE TABLE IF NOT EXISTS album_info (
@@ -177,6 +190,17 @@ if (!hasTrackDuration) {
   console.log("✅ Column track_duration added");
 }
 
+// ListenBrainz migration: keep the MusicBrainz IDs carried by each listen so we
+// can build exact listenbrainz.org links and Cover Art Archive covers.
+// Rows imported from the previous Last.fm source simply keep NULL MBIDs.
+const MBID_COLUMNS = ["artist_mbid", "release_mbid", "recording_mbid"];
+for (const column of MBID_COLUMNS) {
+  if (!scrobbleColumns.some(entry => entry.name === column)) {
+    db.prepare(`ALTER TABLE scrobbles ADD COLUMN ${column} TEXT`).run();
+    console.log(`✅ Column ${column} added`);
+  }
+}
+
 const scrobblesTable = db.prepare(`
   SELECT sql
   FROM sqlite_master
@@ -207,6 +231,12 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_track
   ON scrobbles (artist, track);
+
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_release_mbid
+  ON scrobbles (release_mbid);
+
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_recording_mbid
+  ON scrobbles (recording_mbid);
 `);
 
 module.exports = db;

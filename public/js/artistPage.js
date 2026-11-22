@@ -57,7 +57,7 @@ function renderTopTracks(data) {
           href="${escapeAttribute(row.url || "#")}"
           target="_blank"
           rel="noopener noreferrer"
-          title="${escapeAttribute(t("dashboard.openTrackOnLastfm"))}"
+          title="${escapeAttribute(t("dashboard.openTrackOnListenbrainz"))}"
         >
           <i class="mdi mdi-open-in-new"></i>
         </a>
@@ -119,13 +119,13 @@ function renderArtist(data) {
     }
   }
 
-  const lastfmLink = document.getElementById("artist-lastfm");
-  if (lastfmLink) {
-    if (data.lastfmUrl) {
-      lastfmLink.href = data.lastfmUrl;
-      lastfmLink.classList.remove("d-none");
+  const listenbrainzLink = document.getElementById("artist-listenbrainz");
+  if (listenbrainzLink) {
+    if (data.listenbrainzUrl) {
+      listenbrainzLink.href = data.listenbrainzUrl;
+      listenbrainzLink.classList.remove("d-none");
     } else {
-      lastfmLink.classList.add("d-none");
+      listenbrainzLink.classList.add("d-none");
     }
   }
 

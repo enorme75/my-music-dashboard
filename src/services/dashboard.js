@@ -1,7 +1,7 @@
 const db = require("../db");
 const { fillMissingDates, getLocalDayModifier, getLocalYearToDate, parseTimezoneOffset } = require("../utils/dateRange");
 const { getDashboardFilterContext, getTimezoneOffset } = require("../utils/dashboardFilter");
-const { getArtistUrl, getAlbumUrl, getTrackUrl } = require("../utils/lastfmUrl");
+const { getArtistUrl, getAlbumUrl, getTrackUrl } = require("../utils/listenbrainzUrl");
 const { calculateChange, normalizeSummary } = require("../utils/dashboardMetrics");
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
 const { ensureAlbumCover } = require("./albumCoverCache");
@@ -101,7 +101,7 @@ function getSummary(context, query = {}) {
 
 function getTopArtistRows(filter) {
   return db.prepare(`
-    SELECT artist, COUNT(*) AS plays
+    SELECT artist, COUNT(*) AS plays, MAX(artist_mbid) AS artist_mbid
     FROM scrobbles
     ${whereClause(filter)}
     GROUP BY artist
@@ -116,6 +116,8 @@ function getTopAlbumRows(filter) {
       artist,
       album,
       MAX(NULLIF(album_image, '')) AS album_image,
+      MAX(artist_mbid) AS artist_mbid,
+      MAX(release_mbid) AS release_mbid,
       COUNT(*) AS plays
     FROM scrobbles
     WHERE album IS NOT NULL
@@ -134,6 +136,9 @@ function getTopTrackRows(filter) {
       artist,
       album,
       MAX(NULLIF(album_image, '')) AS album_image,
+      MAX(artist_mbid) AS artist_mbid,
+      MAX(release_mbid) AS release_mbid,
+      MAX(recording_mbid) AS recording_mbid,
       COUNT(*) AS plays
     FROM scrobbles
     WHERE album IS NOT NULL
@@ -331,15 +336,15 @@ async function enrichDashboardLists(artists, albums, tracks) {
     artists: artists.map(row => ({
       ...row,
       image: values.get(`artist:${row.artist.toLocaleLowerCase()}`) || null,
-      url: getArtistUrl(row.artist)
+      url: getArtistUrl(row.artist, row.artist_mbid)
     })),
     albums: albums.map(row => ({
       ...row,
       album_image: values.get(
         `album:${row.artist.toLocaleLowerCase()}\u0000${row.album.toLocaleLowerCase()}`
       ) || row.album_image || null,
-      url: getAlbumUrl(row.artist, row.album),
-      artist_url: getArtistUrl(row.artist)
+      url: getAlbumUrl(row.artist, row.album, row.release_mbid),
+      artist_url: getArtistUrl(row.artist, row.artist_mbid)
     })),
     tracks: tracks.map(row => {
       const duration = Number(values.get(
@@ -352,9 +357,9 @@ async function enrichDashboardLists(artists, albums, tracks) {
           `album:${row.artist.toLocaleLowerCase()}\u0000${row.album.toLocaleLowerCase()}`
         ) || row.album_image || null,
         total_seconds: duration * Number(row.plays || 0),
-        url: getTrackUrl(row.artist, row.track),
-        artist_url: getArtistUrl(row.artist),
-        album_url: getAlbumUrl(row.artist, row.album)
+        url: getTrackUrl(row.artist, row.track, row.recording_mbid),
+        artist_url: getArtistUrl(row.artist, row.artist_mbid),
+        album_url: getAlbumUrl(row.artist, row.album, row.release_mbid)
       };
     })
   };

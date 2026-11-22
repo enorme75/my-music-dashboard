@@ -2,6 +2,25 @@
 
 All notable changes to YourLastFM are documented in this file.
 
+## [2.0.0] - 2026-11-22 — migration de la source Last.fm vers ListenBrainz
+
+### Changed (breaking)
+- **Source de données : ListenBrainz au lieu de Last.fm.** Nouvelles variables d'env obligatoires : `LISTENBRAINZ_USERNAME` (requis) et `LISTENBRAINZ_USER_TOKEN` (optionnel, validation `validate-token`, jamais exposé au navigateur). `LASTFM_API_KEY` / `LASTFM_USERNAME` / `LASTFM_REQUEST_*` disparaissent au profit de `LISTENBRAINZ_REQUEST_DELAY_MS` (défaut 1000 ms), `LISTENBRAINZ_REQUEST_TIMEOUT_MS`, `LISTENBRAINZ_MAX_LISTENS_PER_REQUEST` (défaut 1000) et `LISTENBRAINZ_API_URL` / `LISTENBRAINZ_WEB_URL` (override d'instance).
+- **Synchro** : `GET /1/user/{u}/listens` fenêtré (min_ts/max_ts, batchs de 1000, curseur max_ts) à la place de `user.getrecenttracks` paginé. Même mécanique de lock, checkpoint et fenêtre rejouée. Chaque listen stocke désormais `artist_mbid` / `release_mbid` / `recording_mbid` et la durée (backfill des lignes existantes sur conflit).
+- **Intégrity check** : compare le count local à `GET /1/user/{u}/listen-count`.
+- **Scrobbles récents live** : listens LB + `playing-now` (badge « en cours »), pagination émulée par curseur ; `delete_url` pointe vers la page `listenbrainz.org/user/{u}/listens/`. La suppression reste **locale** (`deleted_scrobbles`) — aucune purge distante via `delete-listen` (décision du 2026-11-22).
+- **Liens externes** : `listenbrainz.org/artist|release|track/{mbid}` quand le MBID est connu, sinon recherche ListenBrainz. Champs renommés : `lastfmUrl` → `listenbrainzUrl` (page artiste), `lastfmTracklist` → `externalTracklist` (page album).
+- **Métadonnées** : MusicBrainz (client throttlé 1 req/s + UA) pour MBID artiste, tracklists d'albums (release-group → recordings) et durées de morceaux (recording.length) ; pochettes via **Cover Art Archive** (`release_mbid` des listens, puis release-group MB), fallback Deezer inchangé ; bios artistes via **Wikipedia** (titre exact puis search, langue demandée) avec fallback annotation MB ; année d'album toujours via MB release-group.
+- **Amis** : la liste « amis » devient les **followings** ListenBrainz (`/1/user/{u}/following`) avec listen-count ; la comparaison utilise les stats LB `all_time` (artists/recordings/releases). Les usernames de groupes de leaderboards sont à re-saisir en usernames LB.
+- **Leaderboards** : les classements sur période arbitraire sont agrégés depuis les listens bruts des membres (les stats LB n'ont que des ranges fixes) ; profils via listen-count + page `listenbrainz.org/user/{u}/`.
+- **Images** : le proxy `/api/image-proxy` autorise désormais `coverartarchive.org` et `*.archive.org` (redirections CAA) en plus des CDN legacy Last.fm/Deezer (pochettes historées encore servies). Le header `Authorization` est masqué dans les logs d'erreur.
+- **Schéma SQLite** : colonnes `artist_mbid`, `release_mbid`, `recording_mbid` ajoutées à `scrobbles` (migration auto) ; `artist_info.lastfm_url` renommée en `listenbrainz_url` (cache vidé). Les données historiques restent intactes.
+- Avatar ListenBrainz : aucun avatar côté LB → `null` (placeholder UI).
+- Bios artistes en anglais par défaut (`ARTIST_BIO_LANG=en`, Wikipedia anglais plus riche), indépendamment de la langue de l'UI.
+
+### Tests
+- Nouveaux tests `listenbrainz.test.js` (normalizeListen, URLs CAA), `listenbrainzUrl.test.js`, `listenbrainzResponse.test.js`, `imageUrl.test.js` ; `leaderboard.test.js` adapté (agrégation depuis listens LB) ; `syncStatus.test.js` à jour. 79 tests OK, `npm run check` OK. Smoke test réel contre l'API LB (sync incrémental idempotent, recent-scrobbles, leaderboard, friends, image-proxy CAA→archive.org).
+
 ## [1.9.0] - 2026-11-22
 
 ### Added

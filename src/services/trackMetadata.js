@@ -1,12 +1,10 @@
-const axios = require("axios");
 require("dotenv").config();
 
-const { fetchWithRetry } = require("../utils/fetchRetry");
-const { assertLastFmResponse } = require("../utils/lastfmResponse");
-const { getLastFmImage } = require("../utils/lastfmImage");
+const { findRecording } = require("./musicbrainz");
+const { getReleaseCoverUrl } = require("../utils/coverArtArchive");
+const { resolveCoverUrl } = require("./coverArtLookup");
+const { sanitizeError } = require("../utils/sanitizeAxios");
 
-const LASTFM_URL = "https://ws.audioscrobbler.com/2.0/";
-const REQUEST_TIMEOUT = Number(process.env.LASTFM_REQUEST_TIMEOUT_MS || 15000);
 const RESPONSE_CACHE_TTL_MS = 60 * 1000;
 
 const responseCache = new Map();
@@ -16,24 +14,24 @@ const requestKey = (artist, track) => (
   `${String(artist || "").trim().toLocaleLowerCase()}\u0000${String(track || "").trim().toLocaleLowerCase()}`
 );
 
+// Track info from MusicBrainz: duration, release (album) and cover via the
+// Cover Art Archive. Deezer remains the fallback in trackCoverCache.
 async function fetchTrackInfo(artist, track) {
-  const response = await fetchWithRetry(async () => {
-    const result = await axios.get(LASTFM_URL, {
-      timeout: REQUEST_TIMEOUT,
-      params: {
-        method: "track.getInfo",
-        api_key: process.env.LASTFM_API_KEY,
-        artist,
-        track,
-        autocorrect: 1,
-        format: "json"
-      }
-    });
-    assertLastFmResponse(result.data);
-    return result;
-  });
+  const recording = await findRecording(artist, track);
+  if (!recording) return null;
 
-  return response.data?.track || null;
+  let image = null;
+  if (recording.releaseMbid) {
+    image = await resolveCoverUrl(getReleaseCoverUrl(recording.releaseMbid, "500"));
+  }
+
+  return {
+    mbid: recording.mbid,
+    duration: recording.duration,
+    album: recording.releaseTitle,
+    releaseMbid: recording.releaseMbid,
+    image
+  };
 }
 
 async function getTrackInfo(artist, track) {
@@ -52,7 +50,10 @@ async function getTrackInfo(artist, track) {
       });
       return value;
     })
-    .catch(() => null)
+    .catch(error => {
+      console.warn(`⚠️ [MusicBrainz] Track info failed: ${artist} - ${track}`, sanitizeError(error));
+      return null;
+    })
     .finally(() => inFlight.delete(key));
 
   inFlight.set(key, request);
@@ -61,9 +62,9 @@ async function getTrackInfo(artist, track) {
 
 async function getTrackDuration(artist, track) {
   const info = await getTrackInfo(artist, track);
-  const durationMs = Number(info?.duration);
-  if (!durationMs || durationMs <= 0) return null;
-  return Math.round(durationMs / 1000);
+  const duration = Number(info?.duration);
+  if (!Number.isInteger(duration) || duration <= 0) return null;
+  return duration;
 }
 
 async function getTrackCoverInfo(artist, track) {
@@ -71,8 +72,8 @@ async function getTrackCoverInfo(artist, track) {
   if (!info) return { album: null, image: null };
 
   return {
-    album: String(info.album?.title || "").trim() || null,
-    image: getLastFmImage(info.album?.image)
+    album: String(info.album || "").trim() || null,
+    image: info.image || null
   };
 }
 

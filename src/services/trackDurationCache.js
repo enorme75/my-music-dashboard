@@ -1,5 +1,5 @@
 const db = require("../db");
-const { getTrackDuration } = require("./lastfm-track");
+const { getTrackDuration } = require("./trackMetadata");
 
 const FALLBACK_SECONDS = 180;
 const failureTtlMs = Math.max(60000, Number(process.env.METADATA_FAILURE_CACHE_MS) || 10 * 60 * 1000);

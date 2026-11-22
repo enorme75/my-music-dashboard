@@ -1,5 +1,5 @@
 const db = require("../db");
-const { getArtistUrl, getAlbumUrl, getTrackUrl } = require("../utils/lastfmUrl");
+const { getArtistUrl, getAlbumUrl, getTrackUrl } = require("../utils/listenbrainzUrl");
 const { getCachedArtistImage } = require("./artistImageCache");
 
 db.function("norm", { deterministic: true }, value => {
@@ -23,7 +23,7 @@ function likePattern(query) {
 }
 
 const searchArtists = db.prepare(`
-  SELECT artist, COUNT(*) AS plays
+  SELECT artist, COUNT(*) AS plays, MAX(artist_mbid) AS artist_mbid
   FROM scrobbles
   WHERE norm(artist) LIKE ? ESCAPE '\\'
   GROUP BY artist
@@ -36,7 +36,9 @@ const searchAlbums = db.prepare(`
     artist,
     album,
     COUNT(*) AS plays,
-    MAX(NULLIF(album_image, '')) AS album_image
+    MAX(NULLIF(album_image, '')) AS album_image,
+    MAX(artist_mbid) AS artist_mbid,
+    MAX(release_mbid) AS release_mbid
   FROM scrobbles
   WHERE norm(album) LIKE ? ESCAPE '\\'
     AND album IS NOT NULL
@@ -47,7 +49,13 @@ const searchAlbums = db.prepare(`
 `);
 
 const searchTracks = db.prepare(`
-  SELECT artist, track, COUNT(*) AS plays
+  SELECT
+    artist,
+    track,
+    COUNT(*) AS plays,
+    MAX(artist_mbid) AS artist_mbid,
+    MAX(release_mbid) AS release_mbid,
+    MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
   WHERE norm(track) LIKE ? ESCAPE '\\'
   GROUP BY artist, track
@@ -62,7 +70,7 @@ function searchLibrary(query) {
     artist: row.artist,
     plays: row.plays,
     image: getCachedArtistImage(row.artist),
-    url: getArtistUrl(row.artist)
+    url: getArtistUrl(row.artist, row.artist_mbid)
   }));
 
   const albums = searchAlbums.all(pattern).map(row => ({
@@ -70,15 +78,15 @@ function searchLibrary(query) {
     album: row.album,
     plays: row.plays,
     image: row.album_image || null,
-    url: getAlbumUrl(row.artist, row.album)
+    url: getAlbumUrl(row.artist, row.album, row.release_mbid)
   }));
 
   const tracks = searchTracks.all(pattern).map(row => ({
     artist: row.artist,
     track: row.track,
     plays: row.plays,
-    url: getTrackUrl(row.artist, row.track),
-    artist_url: getArtistUrl(row.artist)
+    url: getTrackUrl(row.artist, row.track, row.recording_mbid),
+    artist_url: getArtistUrl(row.artist, row.artist_mbid)
   }));
 
   return { query, artists, albums, tracks };

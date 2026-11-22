@@ -1,9 +1,9 @@
 const db = require("../db");
-const { getTrackUrl, getAlbumUrl, getArtistUrl } = require("../utils/lastfmUrl");
+const { getTrackUrl, getAlbumUrl, getArtistUrl } = require("../utils/listenbrainzUrl");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureAlbumYear } = require("./albumYearCache");
 const { ensureDiscogsAlbumLink } = require("./discogsCache");
-const { getAlbumTracks: fetchLastfmAlbumTracks } = require("./lastfm-album");
+const { getAlbumTracks: fetchAlbumTracks } = require("./albumMetadata");
 const { withDashboardCache } = require("./dashboardCache");
 
 const getAlbumStats = db.prepare(`
@@ -12,7 +12,9 @@ const getAlbumStats = db.prepare(`
     MIN(played_at) AS firstPlay,
     MAX(played_at) AS lastPlay,
     COUNT(DISTINCT track) AS uniqueTracks,
-    MAX(NULLIF(album_image, '')) AS album_image
+    MAX(NULLIF(album_image, '')) AS album_image,
+    MAX(artist_mbid) AS artist_mbid,
+    MAX(release_mbid) AS release_mbid
   FROM scrobbles
   WHERE artist = ? COLLATE NOCASE AND album = ? COLLATE NOCASE
 `);
@@ -21,7 +23,8 @@ const getAlbumTracks = db.prepare(`
   SELECT
     track,
     COUNT(*) AS plays,
-    MAX(played_at) AS lastPlay
+    MAX(played_at) AS lastPlay,
+    MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
   WHERE artist = ? COLLATE NOCASE AND album = ? COLLATE NOCASE
   GROUP BY track
@@ -33,11 +36,11 @@ async function buildAlbumPage(artist, album) {
   if (!stats || stats.plays === 0) return null;
 
   const tracks = getAlbumTracks.all(artist, album);
-  const [cover, year, discogs, lastfmTracks] = await Promise.all([
+  const [cover, year, discogs, albumTracks] = await Promise.all([
     ensureAlbumCover(artist, album).catch(() => null),
     ensureAlbumYear(artist, album),
     ensureDiscogsAlbumLink(artist, album).catch(() => null),
-    fetchLastfmAlbumTracks(artist, album).catch(() => null)
+    fetchAlbumTracks(artist, album).catch(() => null)
   ]);
 
   return {
@@ -49,19 +52,19 @@ async function buildAlbumPage(artist, album) {
     uniqueTracks: stats.uniqueTracks,
     image: cover || stats.album_image || null,
     year: year || null,
-    url: getAlbumUrl(artist, album),
-    artistUrl: getArtistUrl(artist),
+    url: getAlbumUrl(artist, album, stats.release_mbid),
+    artistUrl: getArtistUrl(artist, stats.artist_mbid),
     discogsUrl: discogs?.url || null,
     genres: discogs?.genres || null,
     styles: discogs?.styles || null,
     label: discogs?.label || null,
     discogsTracklist: discogs?.tracklist || null,
-    lastfmTracklist: lastfmTracks || null,
+    externalTracklist: albumTracks || null,
     tracks: tracks.map(row => ({
       track: row.track,
       plays: row.plays,
       lastPlay: row.lastPlay,
-      url: getTrackUrl(artist, row.track)
+      url: getTrackUrl(artist, row.track, row.recording_mbid)
     }))
   };
 }

@@ -1,6 +1,6 @@
-const { getAlbumImage } = require("./lastfm-album");
+const { getAlbumImage } = require("./albumMetadata");
 const { getDeezerAlbumImage } = require("./deezer-album");
-const { isUsableImageUrl, normalizeImageUrl } = require("../utils/lastfmImage");
+const { isUsableImageUrl, normalizeImageUrl } = require("../utils/imageUrl");
 const db = require("../db");
 
 const getCachedCovers = db.prepare(`

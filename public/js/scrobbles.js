@@ -97,7 +97,7 @@ export function scrobbleItemHTML(scrobble, { compact = false, clock = false, loc
             href="${escapeAttribute(scrobble.delete_url)}"
             target="_blank"
             rel="noopener noreferrer"
-            title="Delete this scrobble on Last.fm"
+            title="Delete this scrobble on ListenBrainz"
             ${scrobble.date
               ? `data-artist="${escapeAttribute(scrobble.artist)}" data-track="${escapeAttribute(scrobble.track)}" data-date="${scrobble.date}"`
               : ""}

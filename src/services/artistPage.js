@@ -1,6 +1,6 @@
 const db = require("../db");
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
-const { getAlbumUrl, getTrackUrl } = require("../utils/lastfmUrl");
+const { getAlbumUrl, getTrackUrl, getArtistUrl } = require("../utils/listenbrainzUrl");
 const { ensureArtistImage } = require("./artistImageCache");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureArtistInfo } = require("./artistInfoCache");
@@ -19,7 +19,8 @@ const getArtistStats = db.prepare(`
     MIN(played_at) AS firstPlay,
     MAX(played_at) AS lastPlay,
     COUNT(DISTINCT track) AS uniqueTracks,
-    COUNT(DISTINCT NULLIF(TRIM(album), '')) AS uniqueAlbums
+    COUNT(DISTINCT NULLIF(TRIM(album), '')) AS uniqueAlbums,
+    MAX(artist_mbid) AS artist_mbid
   FROM scrobbles
   WHERE artist = ? COLLATE NOCASE
 `);
@@ -27,7 +28,8 @@ const getArtistStats = db.prepare(`
 const getArtistTopTracks = db.prepare(`
   SELECT
     track,
-    COUNT(*) AS plays
+    COUNT(*) AS plays,
+    MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
   WHERE artist = ? COLLATE NOCASE
   GROUP BY track
@@ -39,6 +41,7 @@ const getArtistAlbums = db.prepare(`
   SELECT
     album,
     MAX(NULLIF(album_image, '')) AS album_image,
+    MAX(release_mbid) AS release_mbid,
     COUNT(*) AS plays,
     MIN(played_at) AS firstPlay
   FROM scrobbles
@@ -86,17 +89,17 @@ async function buildArtistPage(artist, lang) {
     uniqueAlbums: stats.uniqueAlbums,
     image: image || info?.image || null,
     bio: info?.bio || null,
-    lastfmUrl: info?.lastfmUrl || null,
+    listenbrainzUrl: info?.listenbrainzUrl || getArtistUrl(artist, stats.artist_mbid),
     discogsUrl: discogs?.url || null,
     members: discogs?.members || null,
     topTracks: topTracks.map(row => ({
       track: row.track,
       plays: row.plays,
-      url: getTrackUrl(artist, row.track)
+      url: getTrackUrl(artist, row.track, row.recording_mbid)
     })),
     albums: enrichedAlbums.map(row => ({
       ...row,
-      url: getAlbumUrl(artist, row.album)
+      url: getAlbumUrl(artist, row.album, row.release_mbid)
     }))
   };
 }

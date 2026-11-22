@@ -1,6 +1,5 @@
 require("dotenv").config();
 
-const axios = require("axios");
 const cors = require("cors");
 const crypto = require("crypto");
 const express = require("express");
@@ -13,12 +12,17 @@ const db = require("./db");
 const { startSync, getSyncStatus } = require("./sync");
 const { getActiveFilter } = require("./utils/filters");
 const { fillMissingDates, getLocalDayModifier, parseTimezoneOffset } = require("./utils/dateRange");
-const { fetchWithRetry } = require("./utils/fetchRetry");
-const { assertLastFmResponse } = require("./utils/lastfmResponse");
 const { mapWithConcurrency } = require("./utils/mapWithConcurrency");
 const { sanitizeError } = require("./utils/sanitizeAxios");
-const { getLastFmImage } = require("./utils/lastfmImage");
-const { getUserLibraryTrackUrl } = require("./utils/lastfmUrl");
+const {
+  MAX_LISTENS_PER_REQUEST,
+  getListens,
+  getPlayingNow,
+  getUsername,
+  normalizeListen
+} = require("./utils/listenbrainz");
+const { getUserListensUrl } = require("./utils/listenbrainzUrl");
+const { getListenCoverUrl } = require("./utils/coverArtArchive");
 const { deleteScrobbleLocally } = require("./services/scrobbleDeletion");
 const { getArtistPage } = require("./services/artistPage");
 const { getAlbumPage } = require("./services/albumPage");
@@ -29,9 +33,9 @@ const { ensureArtistImage } = require("./services/artistImageCache");
 const { importScrobbleCSV } = require("./services/importScrobbleCSV");
 const { exportScrobbleCSV } = require("./services/exportScrobbleCSV");
 const { ensureTrackDuration } = require("./services/trackDurationCache");
-const { getLastFmUserInfo } = require("./services/lastfm-username");
+const { getListenBrainzUserInfo } = require("./services/listenbrainz-user");
 const { getRemoteImage } = require("./services/remoteImageCache");
-const { getFriendsList, compareWithFriend } = require("./services/lastfm-friends");
+const { getFriendsList, compareWithFriend } = require("./services/listenbrainz-friends");
 const {
   createLeaderboardGroup,
   deleteLeaderboardGroup,
@@ -550,50 +554,62 @@ app.get("/api/recent-scrobbles", asyncRoute(async (req, res) => {
   const page = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const parsedLimit = Number.parseInt(req.query.limit || "50", 10);
   const limit = Number.isInteger(parsedLimit) && parsedLimit > 0
-    ? Math.min(parsedLimit, 200)
+    ? Math.min(parsedLimit, 100)
     : 50;
 
-  const response = await fetchWithRetry(async () => {
-    const result = await axios.get("https://ws.audioscrobbler.com/2.0/", {
-      timeout: Number(process.env.LASTFM_REQUEST_TIMEOUT_MS || 15000),
-      params: {
-        method: "user.getrecenttracks",
-        user: process.env.LASTFM_USERNAME,
-        api_key: process.env.LASTFM_API_KEY,
-        format: "json",
-        limit,
-        page
+  const username = getUsername();
+  const deleteUrl = getUserListensUrl(username);
+
+  const toItem = (listen, nowPlaying = false) => {
+    const normalized = normalizeListen(listen);
+    return {
+      track: normalized.track,
+      artist: normalized.artist || "Unknown artist",
+      album: normalized.album,
+      image: getListenCoverUrl(normalized, "500"),
+      nowPlaying,
+      date: normalized.playedAt ? normalized.playedAt * 1000 : null,
+      delete_url: deleteUrl
+    };
+  };
+
+  // ListenBrainz has no page parameter: fetch up to page*limit newest listens
+  // by walking the max_ts cursor backwards, then slice the requested page.
+  const target = page * limit;
+  const collected = [];
+  let cursorMax = 0;
+
+  while (collected.length < target) {
+    const wanted = Math.min(target - collected.length, MAX_LISTENS_PER_REQUEST);
+    const payload = await getListens({ user: username, maxTs: cursorMax, count: wanted });
+    const batch = Array.isArray(payload?.listens) ? payload.listens : [];
+    if (!batch.length) break;
+
+    collected.push(...batch);
+    if (batch.length < wanted) break;
+
+    const oldest = Math.min(...batch.map(listen => Number(listen?.listened_at) || 0));
+    cursorMax = oldest - 1;
+  }
+
+  let tracks = collected
+    .slice((page - 1) * limit, page * limit)
+    .map(listen => toItem(listen));
+
+  if (page === 1) {
+    try {
+      const playingNow = await getPlayingNow(username);
+      if (playingNow) {
+        tracks = [toItem(playingNow, true), ...tracks];
       }
-    });
-    assertLastFmResponse(result.data);
-    return result;
-  });
-
-  const recentTracks = response.data?.recenttracks;
-  const tracks = Array.isArray(recentTracks?.track)
-    ? recentTracks.track
-    : recentTracks?.track
-      ? [recentTracks.track]
-      : [];
-  const attr = recentTracks?.["@attr"];
-
-  const parsed = tracks
-    .filter(track => !(page > 1 && track["@attr"]?.nowplaying))
-    .map(track => ({
-      track: track.name,
-      artist: track.artist?.["#text"] || "Unknown artist",
-      image: getLastFmImage(track.image),
-      nowPlaying: Boolean(track["@attr"]?.nowplaying),
-      date: track.date ? Number(track.date.uts) * 1000 : null,
-      delete_url: getUserLibraryTrackUrl(
-        process.env.LASTFM_USERNAME,
-        track.url
-      )
-    }));
+    } catch (error) {
+      console.warn("[ListenBrainz] playing-now unavailable:", sanitizeError(error).message);
+    }
+  }
 
   res.json({
-    tracks: parsed,
-    hasMore: page < Number(attr?.totalPages || 1)
+    tracks,
+    hasMore: collected.length >= target
   });
 }));
 
@@ -685,8 +701,8 @@ app.get("/api/export/scrobbles", (req, res) => {
 app.get("/api/user-stats", asyncRoute(async (req, res) => {
   setNoStore(res);
 
-  const [lastFmData, stats] = await Promise.all([
-    getLastFmUserInfo(),
+  const [listenBrainzData, stats] = await Promise.all([
+    getListenBrainzUserInfo(),
     Promise.resolve(db.prepare(`
       SELECT
         COUNT(*) AS totalScrobbles,
@@ -714,8 +730,8 @@ app.get("/api/user-stats", asyncRoute(async (req, res) => {
   ]);
 
   res.json({
-    username: lastFmData.name,
-    avatar: lastFmData.avatar,
+    username: listenBrainzData.name,
+    avatar: listenBrainzData.avatar,
     ...stats
   });
 }));

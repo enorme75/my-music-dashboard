@@ -79,7 +79,7 @@ function renderTracks(tracks) {
           href="${escapeAttribute(row.url || "#")}"
           target="_blank"
           rel="noopener noreferrer"
-          title="${escapeAttribute(t("dashboard.openTrackOnLastfm"))}"
+          title="${escapeAttribute(t("dashboard.openTrackOnListenbrainz"))}"
         >
           <i class="mdi mdi-open-in-new"></i>
         </a>

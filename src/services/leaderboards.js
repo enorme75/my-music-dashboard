@@ -1,19 +1,23 @@
-const axios = require("axios");
 const crypto = require("crypto");
 
-const { version: APP_VERSION } = require("../../package.json");
-
 const db = require("../db");
-const { fetchWithRetry } = require("../utils/fetchRetry");
-const { assertLastFmResponse } = require("../utils/lastfmResponse");
-const { getLastFmImage } = require("../utils/lastfmImage");
+const {
+  getAllListens,
+  getListenCount,
+  getUsername
+} = require("../utils/listenbrainz");
+const {
+  getAlbumUrl,
+  getArtistUrl,
+  getTrackUrl,
+  getUserUrl
+} = require("../utils/listenbrainzUrl");
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
 const { sanitizeError } = require("../utils/sanitizeAxios");
 const {
   aggregateMemberCharts,
+  buildChartItemsFromListens,
   compoundKey,
-  extractArtistName,
-  normalizeChartItems,
   normalizeGroupInput,
   normalizeKey,
   normalizeLeaderboardType,
@@ -24,14 +28,12 @@ const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureArtistImage } = require("./artistImageCache");
 const { ensureTrackCover } = require("./trackCoverCache");
 const { toImageProxyUrl } = require("./remoteImageCache");
+const { findReleaseGroup, getReleaseGroupTracks } = require("./musicbrainz");
 
-const BASE_URL = "https://ws.audioscrobbler.com/2.0/";
-const USER_AGENT = `YourLastFM/${APP_VERSION} (+https://github.com/Gomaink/your_lastfm)`;
-const API_KEY = process.env.LASTFM_API_KEY;
-const MAIN_USER = normalizeText(process.env.LASTFM_USERNAME);
+const MAIN_USER = normalizeText(getUsername());
 const AVATAR_PLACEHOLDER = "/images/artist-placeholder.png";
 const COVER_PLACEHOLDER = "/images/cover-placeholder.svg";
-const REQUEST_TIMEOUT = Math.max(1000, Number(process.env.LASTFM_REQUEST_TIMEOUT_MS) || 15000);
+const CHART_REQUEST_DELAY_MS = Math.max(0, Number(process.env.LISTENBRAINZ_REQUEST_DELAY_MS || 1000));
 const REQUEST_CONCURRENCY = Math.max(
   1,
   Number(process.env.LEADERBOARD_REQUEST_CONCURRENCY)
@@ -119,25 +121,6 @@ function parseCachedPayload(row, ttlMs) {
   }
 }
 
-async function lastFmRequest(params) {
-  if (!API_KEY) throw createHttpError("LASTFM_API_KEY is not configured", 500);
-
-  return fetchWithRetry(async () => {
-    const response = await axios.get(BASE_URL, {
-      timeout: REQUEST_TIMEOUT,
-      headers: { "User-Agent": USER_AGENT },
-      params: {
-        api_key: API_KEY,
-        format: "json",
-        ...params
-      }
-    });
-
-    assertLastFmResponse(response.data);
-    return response.data;
-  });
-}
-
 function normalizeProfileRow(row) {
   if (!row) return null;
   return {
@@ -190,35 +173,29 @@ function saveProfile(profile) {
 }
 
 async function fetchUserProfile(username) {
-  let data;
+  let playcount;
 
   try {
-    data = await lastFmRequest({
-      method: "user.getInfo",
-      user: username
-    });
+    playcount = await getListenCount(username);
   } catch (error) {
-    if ([6, 7].includes(Number(error.lastFmCode))) {
-      throw createHttpError(`Last.fm user "${username}" was not found`, 400);
+    if (Number(error.listenBrainzCode) === 404) {
+      throw createHttpError(`ListenBrainz user "${username}" was not found`, 400);
     }
     throw error;
   }
 
-  const user = data?.user;
-  if (!user?.name) throw createHttpError(`Last.fm user "${username}" was not found`, 400);
-
   return saveProfile({
-    username: normalizeText(user.name),
-    realname: normalizeText(user.realname) || null,
-    avatar: toImageProxyUrl(getLastFmImage(user.image)) || AVATAR_PLACEHOLDER,
-    url: normalizeText(user.url) || null,
-    playcount: Math.max(0, Number.parseInt(user.playcount || "0", 10) || 0)
+    username: normalizeText(username),
+    realname: null,
+    avatar: AVATAR_PLACEHOLDER,
+    url: getUserUrl(username),
+    playcount: Math.max(0, playcount)
   });
 }
 
 async function getUserProfile(username, { force = false } = {}) {
   const cleanUsername = normalizeText(username);
-  if (!cleanUsername) throw createHttpError("Last.fm username is required");
+  if (!cleanUsername) throw createHttpError("ListenBrainz username is required");
 
   const key = normalizeKey(cleanUsername);
   const cached = getCachedProfile(cleanUsername);
@@ -433,33 +410,28 @@ function deleteLeaderboardGroup(groupId) {
   return { deleted: true, id: Number(group.id) };
 }
 
-function getChartResponseItems(type, data) {
-  if (type === "artists") return data?.weeklyartistchart?.artist;
-  if (type === "albums") return data?.weeklyalbumchart?.album;
-  return data?.weeklytrackchart?.track;
-}
-
-function getChartMethod(type) {
-  if (type === "artists") return "user.getWeeklyArtistChart";
-  if (type === "albums") return "user.getWeeklyAlbumChart";
-  return "user.getWeeklyTrackChart";
-}
-
+// Charts over an arbitrary [from, to] window: ListenBrainz stats only expose
+// fixed ranges, so we aggregate the raw listens of the window ourselves.
 async function fetchUserChart(username, type, range) {
-  const data = await lastFmRequest({
-    method: getChartMethod(type),
+  const listens = await getAllListens({
     user: username,
-    from: range.fromTimestamp,
-    to: range.toTimestamp
+    minTs: range.fromTimestamp,
+    maxTs: range.toTimestamp,
+    delayMs: CHART_REQUEST_DELAY_MS
   });
-  const items = normalizeChartItems(type, getChartResponseItems(type, data));
+
+  const items = buildChartItemsFromListens(type, listens, {
+    getArtistUrl,
+    getAlbumUrl,
+    getTrackUrl
+  });
 
   return {
     username,
     type,
     from: range.fromTimestamp,
     to: range.toTimestamp,
-    totalScrobbles: items.reduce((sum, item) => sum + item.playcount, 0),
+    totalScrobbles: listens.length,
     items,
     fetchedAt: Date.now()
   };
@@ -542,14 +514,9 @@ async function buildLeaderboardResult(group, type, range, force) {
   const charts = await mapWithConcurrency(group.members, REQUEST_CONCURRENCY, async member => {
     try {
       const chart = await getUserChart(member.username, type, range, { force });
-      const totalChart = type === "artists"
-        ? chart
-        : await getUserChart(member.username, "artists", range, { force });
 
       return {
         ...chart,
-        totalScrobbles: totalChart.totalScrobbles,
-        stale: Boolean(chart.stale || totalChart.stale),
         profile: member
       };
     } catch (error) {
@@ -566,7 +533,7 @@ async function buildLeaderboardResult(group, type, range, force) {
 
   const availableCharts = charts.filter(chart => !chart.error);
   if (!availableCharts.length) {
-    throw createHttpError("Last.fm did not return data for any group member", 502);
+    throw createHttpError("ListenBrainz did not return data for any group member", 502);
   }
 
   const aggregate = aggregateMemberCharts(type, charts, RESULT_LIMIT);
@@ -657,35 +624,28 @@ async function getLeaderboardResult(groupId, query = {}) {
   return request;
 }
 
+// Album track list via MusicBrainz (release-group recordings).
 async function fetchAlbumTrackList(artist, album) {
-  const data = await lastFmRequest({
-    method: "album.getInfo",
-    artist,
-    album,
-    autocorrect: 1
-  });
-  const albumData = data?.album;
-  const rows = Array.isArray(albumData?.tracks?.track)
-    ? albumData.tracks.track
-    : albumData?.tracks?.track
-      ? [albumData.tracks.track]
-      : [];
+  const group = await findReleaseGroup(artist, album);
+  if (!group?.mbid) {
+    throw createHttpError("No MusicBrainz release-group found for this album", 404);
+  }
 
-  const fallbackArtist = normalizeText(albumData?.artist) || artist;
-  const tracks = rows.map(track => ({
-    name: normalizeText(track?.name),
-    artist: extractArtistName(track?.artist) || fallbackArtist,
-    url: normalizeText(track?.url) || null
-  })).filter(track => track.name && track.artist);
-
+  const tracks = await getReleaseGroupTracks(group.mbid);
   if (!tracks.length) {
-    throw createHttpError("Last.fm did not return a track list for this album", 404);
+    throw createHttpError("MusicBrainz did not return a track list for this album", 404);
   }
 
   return {
-    artist: normalizeText(albumData?.artist) || artist,
-    album: normalizeText(albumData?.name) || album,
-    tracks,
+    artist: normalizeText(artist),
+    album: normalizeText(group.title || album),
+    tracks: tracks
+      .map(track => ({
+        name: normalizeText(track.name),
+        artist: normalizeText(track.artist) || normalizeText(artist),
+        url: getTrackUrl(track.artist || artist, track.name, track.recordingMbid)
+      }))
+      .filter(track => track.name && track.artist),
     fetchedAt: Date.now()
   };
 }
@@ -774,7 +734,7 @@ async function getLeaderboardItemDetails(groupId, query = {}) {
 
   const availableCharts = charts.filter(chart => !chart.error);
   if (!availableCharts.length) {
-    throw createHttpError("Last.fm did not return track data for any group member", 502);
+    throw createHttpError("ListenBrainz did not return track data for any group member", 502);
   }
 
   const aggregate = aggregateMemberCharts("tracks", charts, RESULT_LIMIT);

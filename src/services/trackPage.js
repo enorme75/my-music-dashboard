@@ -1,5 +1,5 @@
 const db = require("../db");
-const { getTrackUrl, getArtistUrl, getAlbumUrl } = require("../utils/lastfmUrl");
+const { getTrackUrl, getArtistUrl, getAlbumUrl } = require("../utils/listenbrainzUrl");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureAlbumYear } = require("./albumYearCache");
 const { withDashboardCache } = require("./dashboardCache");
@@ -19,6 +19,7 @@ const getMainAlbum = db.prepare(`
   SELECT
     album,
     MAX(NULLIF(album_image, '')) AS album_image,
+    MAX(release_mbid) AS release_mbid,
     COUNT(*) AS plays
   FROM scrobbles
   WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
@@ -27,6 +28,15 @@ const getMainAlbum = db.prepare(`
   GROUP BY album
   ORDER BY plays DESC
   LIMIT 1
+`);
+
+const getTrackMbids = db.prepare(`
+  SELECT
+    MAX(artist_mbid) AS artist_mbid,
+    MAX(release_mbid) AS release_mbid,
+    MAX(recording_mbid) AS recording_mbid
+  FROM scrobbles
+  WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
 `);
 
 const getArtistTrackRank = db.prepare(`
@@ -69,6 +79,7 @@ async function buildTrackPage(artist, track) {
   ]);
 
   const scrobbles = getTrackScrobbles.all(artist, track, SCROBBLE_LIMIT, 0);
+  const mbids = getTrackMbids.get(artist, track) || {};
 
   return {
     artist,
@@ -78,11 +89,11 @@ async function buildTrackPage(artist, track) {
     lastPlay: stats.lastPlay,
     artistRank: rank,
     album: mainAlbum?.album || null,
-    albumUrl: mainAlbum ? getAlbumUrl(artist, mainAlbum.album) : null,
+    albumUrl: mainAlbum ? getAlbumUrl(artist, mainAlbum.album, mainAlbum.release_mbid) : null,
     image: cover || mainAlbum?.album_image || null,
     year: year || null,
-    url: getTrackUrl(artist, track),
-    artistUrl: getArtistUrl(artist),
+    url: getTrackUrl(artist, track, mbids.recording_mbid),
+    artistUrl: getArtistUrl(artist, mbids.artist_mbid),
     scrobbles: scrobbles.map(row => ({
       playedAt: row.played_at,
       album: row.album || null
