@@ -99,6 +99,20 @@ function parsePlayBody(body) {
   return { artist, track, queueId };
 }
 
+function parseAlbumPlayBody(body) {
+  const artist = String(body?.artist || "").trim();
+  const album = String(body?.album || "").trim();
+  const queueId = String(body?.queue_id || "").trim();
+
+  if (!artist || !album || artist.length > 200 || album.length > 200) {
+    const error = new Error("artist and album are required (max 200 characters each)");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return { artist, album, queueId };
+}
+
 function getUploadErrorMessage(error) {
   if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
     return "Uploaded file is too large";
@@ -837,6 +851,66 @@ app.post("/api/play/availability", asyncRoute(async (req, res) => {
     .filter(entry => entry.artist && entry.track && entry.artist.length <= 200 && entry.track.length <= 200);
 
   res.json({ configured: true, results: await ma.checkAvailability(tracks) });
+}));
+
+app.post("/api/play/album", asyncRoute(async (req, res) => {
+  setNoStore(res);
+
+  if (!checkPlayRateLimit(req)) {
+    return res.status(429).json({ error: "Too many play requests, slow down", code: "rate_limited" });
+  }
+
+  const { artist, album, queueId } = parseAlbumPlayBody(req.body);
+
+  if (!ma.isConfigured()) {
+    return res.status(503).json({
+      error: "Music Assistant is not configured (set MA_API_URL and MA_TOKEN)",
+      code: "not_configured"
+    });
+  }
+
+  const match = await ma.searchAlbum(artist, album);
+  if (!match) {
+    return res.status(404).json({
+      error: "Album not found in Music Assistant library",
+      code: "not_found"
+    });
+  }
+
+  const resolvedQueueId = await ma.resolveQueueId(queueId);
+  await ma.playAlbum(resolvedQueueId, match.uri);
+
+  const players = await ma.listPlayers().catch(() => []);
+  const player = players.find(entry => entry.queue_id === resolvedQueueId);
+
+  res.json({
+    ok: true,
+    album: match,
+    queue_id: resolvedQueueId,
+    player_name: player?.name || resolvedQueueId
+  });
+}));
+
+app.post("/api/play/album/availability", asyncRoute(async (req, res) => {
+  setNoStore(res);
+
+  if (!checkPlayRateLimit(req)) {
+    return res.status(429).json({ error: "Too many requests, slow down", code: "rate_limited" });
+  }
+
+  if (!ma.isConfigured()) {
+    return res.json({ configured: false, results: {} });
+  }
+
+  const rawAlbums = Array.isArray(req.body?.albums) ? req.body.albums : [];
+  const albums = rawAlbums
+    .map(entry => ({
+      artist: String(entry?.artist || "").trim(),
+      album: String(entry?.album || "").trim()
+    }))
+    .filter(entry => entry.artist && entry.album && entry.artist.length <= 200 && entry.album.length <= 200);
+
+  res.json({ configured: true, results: await ma.checkAlbumAvailability(albums) });
 }));
 
 app.use((error, req, res, next) => {

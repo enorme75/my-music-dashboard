@@ -29,8 +29,30 @@ export function playButtonHtml(artist, track, { large = false } = {}) {
   `;
 }
 
+export function playAlbumButtonHtml(artist, album, { large = false, withLabel = false } = {}) {
+  if (!artist || !album) return "";
+  const label = t("player.playAlbum");
+  return `
+    <button
+      type="button"
+      class="play-btn play-album-btn${large ? " play-btn-lg" : ""}${withLabel ? " with-label" : ""}"
+      data-play-album-artist="${escapeAttribute(artist)}"
+      data-play-album-name="${escapeAttribute(album)}"
+      title="${escapeAttribute(label)}"
+      aria-label="${escapeAttribute(label)}"
+    >
+      <i class="mdi mdi-play"></i>
+      ${withLabel ? `<span class="play-btn-label">${escapeHTML(label)}</span>` : ""}
+    </button>
+  `;
+}
+
 function availabilityKey(artist, track) {
   return `${artist} ${track}`;
+}
+
+function albumAvailabilityKey(artist, album) {
+  return `album:${artist} ${album}`;
 }
 
 export function getSelectedQueueId() {
@@ -59,16 +81,46 @@ function setButtonState(button, state) {
   }
 }
 
-function markUnavailable(button) {
+function markUnavailable(button, labelKey = "player.notInLibrary") {
   button.dataset.avail = "0";
   button.classList.add("is-disabled");
   button.disabled = true;
-  button.title = t("player.notInLibrary");
-  button.setAttribute("aria-label", t("player.notInLibrary"));
+  button.title = t(labelKey);
+  button.setAttribute("aria-label", t(labelKey));
 }
 
 function hideAllPlayButtons() {
   document.querySelectorAll(".play-btn").forEach(button => button.classList.add("d-none"));
+}
+
+function playTargetFromButton(button) {
+  if (button.classList.contains("play-album-btn")) {
+    const artist = button.dataset.playAlbumArtist;
+    const album = button.dataset.playAlbumName;
+    if (!artist || !album) return null;
+    return {
+      kind: "album",
+      artist,
+      album,
+      endpoint: "/api/play/album",
+      payload: { artist, album },
+      missingLabelKey: "player.albumNotInLibrary",
+      sourceOf: data => data.album?.source
+    };
+  }
+
+  const artist = button.dataset.playArtist;
+  const track = button.dataset.playTrack;
+  if (!artist || !track) return null;
+  return {
+    kind: "track",
+    artist,
+    track,
+    endpoint: "/api/play",
+    payload: { artist, track },
+    missingLabelKey: "player.notInLibrary",
+    sourceOf: data => data.track?.source
+  };
 }
 
 async function onPlayClick(event) {
@@ -78,9 +130,8 @@ async function onPlayClick(event) {
   event.preventDefault();
   event.stopPropagation();
 
-  const artist = button.dataset.playArtist;
-  const track = button.dataset.playTrack;
-  if (!artist || !track) return;
+  const target = playTargetFromButton(button);
+  if (!target) return;
 
   const queueId = getSelectedQueueId();
   if (!queueId) {
@@ -90,14 +141,14 @@ async function onPlayClick(event) {
 
   setButtonState(button, "loading");
   try {
-    const data = await fetchJSON("/api/play", {
+    const data = await fetchJSON(target.endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ artist, track, queue_id: queueId })
+      body: JSON.stringify({ ...target.payload, queue_id: queueId })
     });
     setButtonState(button, "playing");
     const playerName = data.player_name || data.queue_id;
-    const source = data.track?.source;
+    const source = target.sourceOf(data);
     showToast(
       source && source !== "library"
         ? t("player.viaProvider", { player: playerName, provider: source })
@@ -106,8 +157,8 @@ async function onPlayClick(event) {
     );
   } catch (error) {
     if (error.status === 404 || error.data?.code === "not_found") {
-      markUnavailable(button);
-      showToast(t("player.notInLibrary"), "info");
+      markUnavailable(button, target.missingLabelKey);
+      showToast(t(target.missingLabelKey), "info");
     } else if (error.status === 503 || error.data?.code === "not_configured") {
       showToast(t("player.notConfigured"), "error");
     } else if (error.status === 400 || error.data?.code === "queue_required") {
@@ -121,17 +172,7 @@ async function onPlayClick(event) {
   }
 }
 
-async function refreshAvailability() {
-  if (!statusLoaded) return;
-
-  const buttons = [...document.querySelectorAll(".play-btn:not([data-avail])")];
-  if (!buttons.length) return;
-
-  if (!configured) {
-    hideAllPlayButtons();
-    return;
-  }
-
+async function refreshTrackAvailability(buttons) {
   const fresh = buttons.filter(button =>
     !requestedKeys.has(availabilityKey(button.dataset.playArtist, button.dataset.playTrack))
   );
@@ -166,6 +207,59 @@ async function refreshAvailability() {
     // will answer 404 with a proper toast if the track is really missing.
     console.warn("Music Assistant availability check failed:", error);
   }
+}
+
+async function refreshAlbumAvailability(buttons) {
+  const fresh = buttons.filter(button =>
+    !requestedKeys.has(albumAvailabilityKey(button.dataset.playAlbumArtist, button.dataset.playAlbumName))
+  );
+  if (!fresh.length) return;
+
+  const albums = fresh.map(button => ({
+    artist: button.dataset.playAlbumArtist,
+    album: button.dataset.playAlbumName
+  }));
+
+  try {
+    const data = await fetchJSON("/api/play/album/availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ albums })
+    });
+
+    if (!data.configured) {
+      hideAllPlayButtons();
+      return;
+    }
+
+    const results = data.results || {};
+    buttons.forEach(button => {
+      const key = albumAvailabilityKey(button.dataset.playAlbumArtist, button.dataset.playAlbumName);
+      if (results[key] === false) markUnavailable(button, "player.albumNotInLibrary");
+      else button.dataset.avail = "1";
+    });
+    fresh.forEach(button => requestedKeys.add(albumAvailabilityKey(button.dataset.playAlbumArtist, button.dataset.playAlbumName)));
+  } catch (error) {
+    console.warn("Music Assistant album availability check failed:", error);
+  }
+}
+
+async function refreshAvailability() {
+  if (!statusLoaded) return;
+
+  const trackButtons = [...document.querySelectorAll(".play-btn:not(.play-album-btn):not([data-avail])")];
+  const albumButtons = [...document.querySelectorAll(".play-album-btn:not([data-avail])")];
+  if (!trackButtons.length && !albumButtons.length) return;
+
+  if (!configured) {
+    hideAllPlayButtons();
+    return;
+  }
+
+  await Promise.all([
+    refreshTrackAvailability(trackButtons),
+    refreshAlbumAvailability(albumButtons)
+  ]);
 }
 
 function scheduleAvailability() {

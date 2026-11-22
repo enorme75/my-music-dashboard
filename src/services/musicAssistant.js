@@ -8,6 +8,7 @@ const DEFAULT_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_PLAYERS_CACHE_TTL_MS = 60 * 1000;
 const MAX_SEARCH_LIMIT = 50;
 const MAX_AVAILABILITY_TRACKS = 200;
+const MAX_AVAILABILITY_ALBUMS = 50;
 // Default player when the browser has not chosen one. Resolved against the MA
 // player list by queue_id first, then by (case-insensitive) name.
 const DEFAULT_PLAYER_NAME = "Squeezelite-MacBook";
@@ -42,6 +43,7 @@ function readConfig() {
 function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
   const config = readConfig();
   const searchCache = new Map();
+  const albumCache = new Map();
   const playersCache = { value: null, expiresAt: 0 };
 
   const post = httpPost || (async (url, payload, headers) => {
@@ -106,10 +108,10 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return artists.map(artist => artist?.name).filter(Boolean);
   }
 
-  function isLibraryTrack(item) {
+  function isLibraryItem(item) {
     if (String(item?.provider || "").toLowerCase() === "library") return true;
     const uri = String(item?.uri || "");
-    if (uri.startsWith("library://track/")) return true;
+    if (uri.startsWith("library://")) return true;
     const mappings = Array.isArray(item?.provider_mappings) ? item.provider_mappings : [];
     return mappings.some(mapping =>
       ["library", "builtin"].includes(String(mapping?.provider_instance || mapping?.provider || "").toLowerCase())
@@ -190,7 +192,7 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     // are only a fallback when no local copy exists.
     const consider = item => {
       if (!item) return;
-      if (isLibraryTrack(item)) {
+      if (isLibraryItem(item)) {
         if (!matchesQuery(item, expectedArtist, expectedTrack)) return;
         const score = scoreItem(item, expectedArtist, expectedTrack);
         if (!bestLocal || score > bestLocal.score) bestLocal = { item, score };
@@ -242,6 +244,141 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return value;
   }
 
+  function isAlbumItem(item) {
+    return String(item?.media_type || "").toLowerCase() === "album"
+      || /^library:\/\/album\//.test(String(item?.uri || ""))
+      || /:\/\/album\//.test(String(item?.uri || ""));
+  }
+
+  function toAlbumMatch(item, fallbackArtist) {
+    const rawProvider = String(item.provider || "");
+    const provider = rawProvider.toLowerCase();
+    const uri = String(item.uri || "") || (provider === "library" && item.item_id ? `library://album/${item.item_id}` : "");
+    const id = item.item_id ?? (uri ? uri.split("://")[1] : null);
+    if (!id || !uri) return null;
+    const source = provider === "library" || uri.startsWith("library://") ? "library" : (rawProvider || uri.split("://")[0]);
+    return {
+      id,
+      uri,
+      name: String(item.name || ""),
+      version: String(item.version || ""),
+      artist: trackArtists(item)[0] || fallbackArtist,
+      source
+    };
+  }
+
+  // Album titles often carry edition suffixes ("(Deluxe Edition)", "- Remastered")
+  // in `version` on external providers, so score both fields.
+  function albumEditionPenalty(item) {
+    const text = `${item?.name || ""} ${item?.version || ""}`;
+    return /\b(live|remaster(?:ed)?|deluxe|edition|version|explicit|single|ep)\b/i.test(text) ? -1 : 0;
+  }
+
+  function scoreAlbum(item, expectedArtist, expectedAlbum) {
+    const itemName = normalize(item?.name || "");
+    const itemArtist = normalize(trackArtists(item).join(" "));
+    let score = 0;
+    if (itemName === expectedAlbum) score += 2;
+    else if (itemName && expectedAlbum && itemName.length >= 4
+      && (itemName.includes(expectedAlbum) || expectedAlbum.includes(itemName))) score += 1;
+    if (itemArtist && itemArtist === expectedArtist) score += 2;
+    else if (expectedArtist && itemArtist) score += 1;
+    return score + albumEditionPenalty(item);
+  }
+
+  function matchesAlbumQuery(item, expectedArtist, expectedAlbum) {
+    const itemName = normalize(item?.name || "");
+    if (!itemName || !isReasonableMatch(itemName, expectedAlbum)) return false;
+    const itemArtist = normalize(trackArtists(item).join(" "));
+    if (expectedArtist && itemArtist && !isReasonableMatch(itemArtist, expectedArtist)) return false;
+    return true;
+  }
+
+  // Same strictness as tracks: external providers answer fuzzy with unrelated
+  // albums, so require both a real title and a real artist match there.
+  function matchesExternalAlbum(item, expectedArtist, expectedAlbum) {
+    const itemName = normalize(item?.name || "");
+    const itemArtist = normalize(trackArtists(item).join(" "));
+    if (!itemName || !itemArtist || !expectedArtist) return false;
+    const titleOk = itemName === expectedAlbum
+      || (itemName.length >= 4 && (itemName.includes(expectedAlbum) || expectedAlbum.includes(itemName)));
+    return titleOk && isReasonableMatch(itemArtist, expectedArtist);
+  }
+
+  async function searchAlbum(artist, album) {
+    const cacheKey = `album:${normalize(artist)} ${normalize(album)}`;
+    const cached = albumCache.get(cacheKey);
+    if (cached && cached.expiresAt > now()) return cached.value;
+
+    const expectedArtist = normalize(artist);
+    const expectedAlbum = normalize(album);
+    let bestLocal = null;
+    let bestExternal = null;
+
+    const consider = item => {
+      if (!item || !isAlbumItem(item)) return;
+      if (isLibraryItem(item)) {
+        if (!matchesAlbumQuery(item, expectedArtist, expectedAlbum)) return;
+        const score = scoreAlbum(item, expectedArtist, expectedAlbum);
+        if (!bestLocal || score > bestLocal.score) bestLocal = { item, score };
+      } else if (isPlayable(item)) {
+        if (!matchesExternalAlbum(item, expectedArtist, expectedAlbum)) return;
+        const score = scoreAlbum(item, expectedArtist, expectedAlbum);
+        const provider = String(item.provider || "").toLowerCase();
+        const externalScore = score - 1 + (provider.startsWith("deezer") ? 0 : -0.5);
+        if (!bestExternal || externalScore > bestExternal.score) bestExternal = { item, score: externalScore };
+      }
+    };
+
+    // 1) Direct album lookup by name.
+    try {
+      consider(await maCommand("music/item_by_name", { name: album, artist, media_type: "album" }));
+    } catch {
+      // item_by_name unavailable or no usable match: fall through
+    }
+
+    // 1b) Retry with the base title (strip "(Deluxe Edition)", "- Remastered"…).
+    if (!bestLocal) {
+      const baseTitle = String(album).split(/\s+[–—(-]/)[0].trim();
+      if (baseTitle && baseTitle !== album) {
+        try {
+          consider(await maCommand("music/item_by_name", { name: baseTitle, artist, media_type: "album" }));
+        } catch {
+          // ignore: fall through to search
+        }
+      }
+    }
+
+    // 2) Fallback: global search, then keep only the album section.
+    if (!bestLocal) {
+      const result = await maCommand("music/search", {
+        search_query: `${artist} ${album}`,
+        limit: MAX_SEARCH_LIMIT
+      });
+      const items = Array.isArray(result?.albums) ? result.albums : [];
+      for (const item of items) consider(item);
+    }
+
+    const best = bestLocal || bestExternal;
+    const value = best ? toAlbumMatch(best.item, artist) : null;
+    albumCache.set(cacheKey, { value, expiresAt: now() + config.searchCacheTtlMs });
+    return value;
+  }
+
+  async function checkAlbumAvailability(albums) {
+    const limited = albums.slice(0, MAX_AVAILABILITY_ALBUMS);
+    const results = {};
+    await Promise.all(limited.map(async ({ artist, album }) => {
+      const key = `${artist} ${album}`;
+      try {
+        results[key] = Boolean(await searchAlbum(artist, album));
+      } catch {
+        results[key] = false;
+      }
+    }));
+    return results;
+  }
+
   async function listPlayers() {
     if (playersCache.value && playersCache.expiresAt > now()) return playersCache.value;
 
@@ -265,14 +402,22 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     return true;
   }
 
-  // Play now: empty the current queue on the chosen player, then play the track.
-  async function playTrack(queueId, trackUri) {
+  // Play now: empty the current queue on the chosen player, then play the media.
+  async function playMedia(queueId, mediaUri) {
     await clearQueue(queueId);
     await maCommand("player_queues/play_media", {
       queue_id: queueId,
-      media: trackUri
+      media: mediaUri
     });
     return true;
+  }
+
+  async function playTrack(queueId, trackUri) {
+    return playMedia(queueId, trackUri);
+  }
+
+  async function playAlbum(queueId, albumUri) {
+    return playMedia(queueId, albumUri);
   }
 
   async function resolveQueueId(queueId) {
@@ -337,11 +482,15 @@ function createMusicAssistantClient({ httpPost, now = () => Date.now() } = {}) {
     isConfigured,
     maCommand,
     searchTrack,
+    searchAlbum,
     listPlayers,
     clearQueue,
+    playMedia,
     playTrack,
+    playAlbum,
     resolveQueueId,
     checkAvailability,
+    checkAlbumAvailability,
     getStatus
   };
 }
@@ -354,9 +503,13 @@ module.exports = {
   isConfigured: () => defaultClient.isConfigured(),
   getStatus: () => defaultClient.getStatus(),
   searchTrack: (artist, track) => defaultClient.searchTrack(artist, track),
+  searchAlbum: (artist, album) => defaultClient.searchAlbum(artist, album),
   listPlayers: () => defaultClient.listPlayers(),
   clearQueue: queueId => defaultClient.clearQueue(queueId),
+  playMedia: (queueId, uri) => defaultClient.playMedia(queueId, uri),
   playTrack: (queueId, uri) => defaultClient.playTrack(queueId, uri),
+  playAlbum: (queueId, uri) => defaultClient.playAlbum(queueId, uri),
   resolveQueueId: queueId => defaultClient.resolveQueueId(queueId),
-  checkAvailability: tracks => defaultClient.checkAvailability(tracks)
+  checkAvailability: tracks => defaultClient.checkAvailability(tracks),
+  checkAlbumAvailability: albums => defaultClient.checkAlbumAvailability(albums)
 };

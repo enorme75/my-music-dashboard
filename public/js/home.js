@@ -4,18 +4,30 @@ import { scrobbleItemHTML, bindScrobbleDelete } from "./scrobbles.js";
 import { renderAlbums } from "./albums.js";
 import { renderTopArtists } from "./artists.js";
 import { renderTopSongs } from "./topSongs.js";
+import { renderSummary } from "./summary.js";
 import { formatTimestampDate } from "./dates.js";
 import { installImageFallback, safeImageUrl } from "./dom.js";
 import { showToast } from "./toast.js";
 
 const HOME_SCROBBLE_LIMIT = 20;
 const RANGE_BY_PILL = {
-  "7d": "week",
-  "30d": "30days",
-  "365d": "year",
-  "all": ""
+  day: "day",
+  week: "week",
+  month: "month",
+  year: "year"
 };
-const DEFAULT_PILL = "7d";
+const DEFAULT_PILL = "day";
+
+const HOME_SUMMARY_IDS = {
+  plays: "home-plays",
+  artistsCount: "home-artists-count",
+  avg: "home-avg",
+  avgLabel: "home-avg-label",
+  hours: "home-hours",
+  playsTrend: "home-plays-trend",
+  avgTrend: "home-avg-trend",
+  hoursTrend: "home-hours-trend"
+};
 
 const MODULES = {
   albums: {
@@ -74,15 +86,32 @@ function renderHomeHeader(stats = {}) {
     : "";
 
   const format = value => Number(value || 0).toLocaleString();
-  document.getElementById("home-total-scrobbles").textContent = format(stats.totalScrobbles);
-  document.getElementById("home-total-artists").textContent = format(stats.uniqueArtists);
-  document.getElementById("home-total-albums").textContent = format(stats.uniqueAlbums);
-  document.getElementById("home-total-tracks").textContent = format(stats.uniqueTracks);
+  const totals = document.getElementById("home-totals");
+  if (totals) {
+    totals.textContent = t("home.totalsLine", {
+      scrobbles: format(stats.totalScrobbles),
+      artists: format(stats.uniqueArtists),
+      albums: format(stats.uniqueAlbums),
+      tracks: format(stats.uniqueTracks)
+    });
+  }
 }
 
 async function loadHomeHeader(signal) {
   const stats = await fetchJSON("/api/user-stats", { cache: "no-store", signal });
   renderHomeHeader(stats);
+}
+
+async function loadHomeToday(signal) {
+  const params = new URLSearchParams();
+  params.set("range", "day");
+  params.set("tzOffset", String(new Date().getTimezoneOffset()));
+
+  const data = await fetchJSON(`/api/dashboard?${params.toString()}`, {
+    cache: "no-store",
+    signal
+  });
+  renderSummary(data.summary || {}, HOME_SUMMARY_IDS);
 }
 
 async function loadHomeScrobbles(signal) {
@@ -148,6 +177,11 @@ export function loadHome() {
     loadHomeHeader(homeAbortController.signal).catch(error => {
       if (error.name === "AbortError" || loadId !== homeLoadCounter) return;
       console.error("Error loading home header:", error);
+      showToast(error.message || t("home.loadError"), "error");
+    }),
+    loadHomeToday(homeAbortController.signal).catch(error => {
+      if (error.name === "AbortError" || loadId !== homeLoadCounter) return;
+      console.error("Error loading home today stats:", error);
       showToast(error.message || t("home.loadError"), "error");
     }),
     loadHomeScrobbles(homeAbortController.signal).catch(error => {

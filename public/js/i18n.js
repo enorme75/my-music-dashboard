@@ -29,6 +29,7 @@ const DICTIONARY = {
   },
   player: {
     play: { fr: "Écouter sur Music Assistant", en: "Play on Music Assistant" },
+    playAlbum: { fr: "Lire l'album sur Music Assistant", en: "Play album on Music Assistant" },
     nowPlayingOn: { fr: "Lecture lancée sur {player}", en: "Playback started on {player}" },
     viaProvider: {
       fr: "Lecture sur {player} (via {provider})",
@@ -37,6 +38,10 @@ const DICTIONARY = {
     notInLibrary: {
       fr: "Morceau absent de la bibliothèque Music Assistant",
       en: "Track not in the Music Assistant library"
+    },
+    albumNotInLibrary: {
+      fr: "Album absent de la bibliothèque Music Assistant",
+      en: "Album not in the Music Assistant library"
     },
     notConfigured: {
       fr: "Music Assistant n'est pas configuré (MA_API_URL / MA_TOKEN)",
@@ -125,10 +130,15 @@ const DICTIONARY = {
       fr: "Écoutes suivies depuis le {date}",
       en: "Tracking listening since {date}"
     },
-    pill7: { fr: "7 jours", en: "7 days" },
-    pill30: { fr: "30 jours", en: "30 days" },
-    pill365: { fr: "365 jours", en: "365 days" },
-    pillAll: { fr: "Tout", en: "All time" },
+    pillDay: { fr: "Jour", en: "Day" },
+    pillWeek: { fr: "Semaine", en: "Week" },
+    pillMonth: { fr: "Mois", en: "Month" },
+    pillYear: { fr: "Année", en: "Year" },
+    today: { fr: "Aujourd'hui", en: "Today" },
+    totalsLine: {
+      fr: "{scrobbles} scrobbles · {artists} artistes · {albums} albums · {tracks} morceaux",
+      en: "{scrobbles} scrobbles · {artists} artists · {albums} albums · {tracks} tracks"
+    },
     topTitles: { fr: "Les plus écoutés", en: "Most played" },
     loadError: { fr: "Erreur de chargement de l'accueil", en: "Error loading the home page" },
     topsError: { fr: "Erreur de chargement des tops", en: "Error loading top lists" }

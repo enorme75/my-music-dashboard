@@ -2131,6 +2131,20 @@ strong {
   filter: brightness(1.12);
 }
 
+.play-btn.with-label {
+  width: auto;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.play-btn.with-label .mdi {
+  font-size: 1.5rem;
+}
+
 .play-btn.is-playing {
   color: var(--bs-success, #198754);
   opacity: 1;
@@ -3047,6 +3061,13 @@ strong {
   margin: 4px 0 0;
   color: var(--text-secondary);
   font-size: 0.9rem;
+}
+
+.home-totals {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  opacity: 0.85;
 }
 
 .home-recent-header {

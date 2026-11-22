@@ -331,3 +331,188 @@ test("getStatus reports configured=false without env and players when configured
   assert.equal(status.defaultQueueId, "q-default");
   assert.deepEqual(status.players, [{ queue_id: "q1", name: "Salon", active: true }]);
 });
+
+const LIBRARY_ALBUM = {
+  item_id: "5487",
+  provider: "library",
+  name: "Abbey Road",
+  uri: "library://album/5487",
+  media_type: "album",
+  artists: [{ name: "The Beatles" }]
+};
+
+test("searchAlbum accepts a direct library album from music/item_by_name with media_type album", async () => {
+  setupEnv();
+  const calls = [];
+  const client = clientWith(async (url, payload) => {
+    calls.push(payload);
+    assert.equal(payload.command, "music/item_by_name");
+    assert.deepEqual(payload.args, { name: "Abbey Road", artist: "The Beatles", media_type: "album" });
+    return { result: LIBRARY_ALBUM };
+  });
+
+  const match = await client.searchAlbum("The Beatles", "Abbey Road");
+  assert.ok(match);
+  assert.equal(match.id, "5487");
+  assert.equal(match.uri, "library://album/5487");
+  assert.equal(match.source, "library");
+  assert.equal(calls.length, 1);
+});
+
+test("searchAlbum prefers the local library album over an external provider", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      return { result: {
+        item_id: "12047952",
+        provider: "deezer--UceRmhqT",
+        name: "Abbey Road",
+        version: "Remastered 2009",
+        uri: "deezer--UceRmhqT://album/12047952",
+        media_type: "album",
+        artists: [{ name: "The Beatles" }],
+        is_playable: true
+      } };
+    }
+    assert.equal(payload.command, "music/search");
+    return { result: { albums: [
+      { ...LIBRARY_ALBUM },
+      {
+        item_id: "112126942",
+        provider: "deezer--UceRmhqT",
+        name: "Abbey Road",
+        version: "Super Deluxe Edition",
+        uri: "deezer--UceRmhqT://album/112126942",
+        media_type: "album",
+        artists: [{ name: "The Beatles" }],
+        is_playable: true
+      }
+    ] } };
+  });
+
+  const match = await client.searchAlbum("The Beatles", "Abbey Road");
+  assert.ok(match);
+  assert.equal(match.uri, "library://album/5487");
+  assert.equal(match.source, "library");
+});
+
+test("searchAlbum falls back to a playable external album when no local copy exists", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") return { result: null };
+    assert.equal(payload.command, "music/search");
+    return { result: { albums: [
+      {
+        item_id: "6575789",
+        provider: "deezer--UceRmhqT",
+        name: "Random Access Memories",
+        uri: "deezer--UceRmhqT://album/6575789",
+        media_type: "album",
+        artists: [{ name: "Daft Punk" }],
+        is_playable: true
+      },
+      {
+        item_id: "999",
+        provider: "bandcamp--x",
+        name: "Random Access Memories Tribute",
+        uri: "https://example.bandcamp.com/album/x",
+        media_type: "album",
+        artists: [{ name: "Someone Else" }],
+        is_playable: true
+      }
+    ] } };
+  });
+
+  const match = await client.searchAlbum("Daft Punk", "Random Access Memories");
+  assert.ok(match);
+  assert.equal(match.uri, "deezer--UceRmhqT://album/6575789");
+  assert.equal(match.source, "deezer--UceRmhqT");
+});
+
+test("searchAlbum rejects external albums with wrong artist and ignores non-album items", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      return { result: {
+        item_id: "1",
+        provider: "deezer--x",
+        name: "Abbey Road",
+        uri: "deezer--x://album/1",
+        media_type: "album",
+        artists: [{ name: "Someone Else" }],
+        is_playable: true
+      } };
+    }
+    return { result: { albums: [
+      // right album name but it is a track, not an album
+      { item_id: "2", provider: "library", name: "Abbey Road", uri: "library://track/2", media_type: "track", artists: [{ name: "The Beatles" }] },
+      { item_id: "3", provider: "deezer--x", name: "Abbey Road", uri: "deezer--x://album/3", media_type: "album", artists: [], is_playable: true }
+    ] } };
+  });
+  assert.equal(await client.searchAlbum("The Beatles", "Abbey Road"), null);
+});
+
+test("searchAlbum strips edition suffixes on the item_by_name retry", async () => {
+  setupEnv();
+  const names = [];
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      names.push(payload.args.name);
+      if (payload.args.name === "Abbey Road") return { result: LIBRARY_ALBUM };
+      return { result: null };
+    }
+    return { result: { albums: [] } };
+  });
+
+  const match = await client.searchAlbum("The Beatles", "Abbey Road (Remastered)");
+  assert.ok(match);
+  assert.equal(match.uri, "library://album/5487");
+  assert.deepEqual(names, ["Abbey Road (Remastered)", "Abbey Road"]);
+});
+
+test("searchAlbum caches results per normalized artist/album", async () => {
+  setupEnv();
+  let calls = 0;
+  const client = clientWith(async () => {
+    calls += 1;
+    return { result: LIBRARY_ALBUM };
+  });
+
+  const first = await client.searchAlbum("The Beatles", "Abbey Road");
+  const second = await client.searchAlbum("the beatles", "abbey road");
+  assert.equal(first.uri, "library://album/5487");
+  assert.equal(second.uri, "library://album/5487");
+  assert.equal(calls, 1);
+});
+
+test("playAlbum clears the queue first, then plays the album uri", async () => {
+  setupEnv();
+  const calls = [];
+  const client = clientWith(async (url, payload) => {
+    calls.push(payload);
+    return { message_id: payload.message_id, result: null };
+  });
+
+  assert.equal(await client.playAlbum("queue-1", "library://album/5487"), true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].command, "player_queues/clear");
+  assert.deepEqual(calls[0].args, { queue_id: "queue-1" });
+  assert.equal(calls[1].command, "player_queues/play_media");
+  assert.deepEqual(calls[1].args, { queue_id: "queue-1", media: "library://album/5487" });
+});
+
+test("checkAlbumAvailability maps raw artist/album keys to booleans", async () => {
+  setupEnv();
+  const client = clientWith(async (url, payload) => {
+    if (payload.command === "music/item_by_name") {
+      if (payload.args.name === "Abbey Road") return { result: LIBRARY_ALBUM };
+      return { result: null };
+    }
+    return { result: { albums: [] } };
+  });
+  const results = await client.checkAlbumAvailability([
+    { artist: "The Beatles", album: "Abbey Road" },
+    { artist: "The Beatles", album: "Let It Be" }
+  ]);
+  assert.deepEqual(results, { "The Beatles Abbey Road": true, "The Beatles Let It Be": false });
+});

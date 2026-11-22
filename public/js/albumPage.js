@@ -2,7 +2,7 @@ import { fetchJSON } from "./api.js";
 import { t } from "./i18n.js";
 import { formatTimestampDate } from "./dates.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
-import { playButtonHtml } from "./player.js";
+import { playButtonHtml, playAlbumButtonHtml } from "./player.js";
 
 let currentAlbum = null;
 let loadId = 0;
@@ -25,6 +25,9 @@ function showLoadingState() {
     const element = document.getElementById(id);
     if (element) element.textContent = "";
   }
+
+  const playButton = document.getElementById("album-play-btn");
+  if (playButton) playButton.innerHTML = "";
 
   const image = document.getElementById("album-image");
   if (image) image.src = "/images/cover-placeholder.svg";
@@ -99,6 +102,7 @@ function renderDiscogsTracklist(data) {
           <span class="rank">${index + 1}</span>
           <div class="meta">
             <strong>${escapeHTML(entry.title)}</strong>
+            ${playButtonHtml(data.artist, entry.title)}
             <small>—</small>
           </div>
         </div>
@@ -195,6 +199,11 @@ function renderAlbumPage(data) {
     } else {
       discogsLink.classList.add("d-none");
     }
+  }
+
+  const playButton = document.getElementById("album-play-btn");
+  if (playButton) {
+    playButton.innerHTML = playAlbumButtonHtml(data.artist, data.album, { large: true, withLabel: true });
   }
 
   renderTracks(data);

@@ -1,13 +1,26 @@
 import { t } from "./i18n.js";
 import { escapeHTML } from "./dom.js";
 
-let avgScope = "filter";
+export const DEFAULT_SUMMARY_IDS = {
+  plays: "plays",
+  artistsCount: "artists-count",
+  avg: "avg",
+  avgLabel: "avg-label",
+  hours: "hours",
+  playsTrend: "plays-trend",
+  avgTrend: "avg-trend",
+  hoursTrend: "hours-trend"
+};
 
-function applyAvgLabel() {
-  const element = document.getElementById("avg-label");
+// elementId -> "year" | "filter", so a locale change re-renders every
+// registered label (stats page and home page each have their own).
+const avgLabelScopes = new Map();
+
+function applyAvgLabel(elementId, scope) {
+  const element = document.getElementById(elementId);
   if (!element) return;
 
-  if (avgScope === "year") {
+  if (scope === "year") {
     element.removeAttribute("data-i18n");
     element.innerHTML = `
       <span>${escapeHTML(t("dashboard.dailyAverageYearMain"))}</span><br>
@@ -20,7 +33,9 @@ function applyAvgLabel() {
   element.textContent = t("dashboard.dailyAverage");
 }
 
-window.addEventListener("localechange", applyAvgLabel);
+window.addEventListener("localechange", () => {
+  for (const [elementId, scope] of avgLabelScopes) applyAvgLabel(elementId, scope);
+});
 
 function renderTrend(elementId, metric, label, note) {
   const element = document.getElementById(elementId);
@@ -53,14 +68,15 @@ function renderTrend(elementId, metric, label, note) {
   element.innerHTML = `<i class="mdi ${icon}"></i> ${value} vs ${resolvedLabel}`;
 }
 
-export function renderSummary(data = {}) {
-  avgScope = data.avgPerDayScope === "year" ? "year" : "filter";
-  applyAvgLabel();
+export function renderSummary(data = {}, ids = DEFAULT_SUMMARY_IDS) {
+  const avgScope = data.avgPerDayScope === "year" ? "year" : "filter";
+  avgLabelScopes.set(ids.avgLabel, avgScope);
+  applyAvgLabel(ids.avgLabel, avgScope);
 
-  document.getElementById("hours").textContent = Number(data.totalMinutes || 0).toLocaleString();
-  document.getElementById("plays").textContent = Number(data.totalPlays || 0).toLocaleString();
-  document.getElementById("artists-count").textContent = Number(data.totalArtists || 0).toLocaleString();
-  document.getElementById("avg").textContent = Number(data.avgPerDay || 0).toLocaleString(undefined, {
+  document.getElementById(ids.hours).textContent = Number(data.totalMinutes || 0).toLocaleString();
+  document.getElementById(ids.plays).textContent = Number(data.totalPlays || 0).toLocaleString();
+  document.getElementById(ids.artistsCount).textContent = Number(data.totalArtists || 0).toLocaleString();
+  document.getElementById(ids.avg).textContent = Number(data.avgPerDay || 0).toLocaleString(undefined, {
     maximumFractionDigits: 1
   });
 
@@ -72,19 +88,19 @@ export function renderSummary(data = {}) {
     : data.comparisonNote;
 
   renderTrend(
-    "hours-trend",
+    ids.hoursTrend,
     data.comparison?.totalMinutes,
     comparisonLabel,
     comparisonNote
   );
   renderTrend(
-    "plays-trend",
+    ids.playsTrend,
     data.comparison?.totalPlays,
     comparisonLabel,
     comparisonNote
   );
   renderTrend(
-    "avg-trend",
+    ids.avgTrend,
     data.comparison?.avgPerDay,
     comparisonLabel,
     comparisonNote
