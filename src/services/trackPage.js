@@ -1,4 +1,5 @@
 const db = require("../db");
+const { ARTIST_COLUMN } = require("../utils/artistName");
 const { getTrackUrl, getArtistUrl, getAlbumUrl } = require("../utils/listenbrainzUrl");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureAlbumYear } = require("./albumYearCache");
@@ -12,7 +13,8 @@ const getTrackStats = db.prepare(`
     MIN(played_at) AS firstPlay,
     MAX(played_at) AS lastPlay
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+    AND track = ? COLLATE NOCASE
 `);
 
 const getMainAlbum = db.prepare(`
@@ -22,7 +24,8 @@ const getMainAlbum = db.prepare(`
     MAX(release_mbid) AS release_mbid,
     COUNT(*) AS plays
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+    AND track = ? COLLATE NOCASE
     AND album IS NOT NULL
     AND TRIM(album) != ''
   GROUP BY album
@@ -36,7 +39,8 @@ const getTrackMbids = db.prepare(`
     MAX(release_mbid) AS release_mbid,
     MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+    AND track = ? COLLATE NOCASE
 `);
 
 const getArtistTrackRank = db.prepare(`
@@ -44,12 +48,13 @@ const getArtistTrackRank = db.prepare(`
   FROM (
     SELECT track
     FROM scrobbles
-    WHERE artist = ? COLLATE NOCASE
+    WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
     GROUP BY track
     HAVING COUNT(*) > (
       SELECT COUNT(*)
       FROM scrobbles
-      WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
+      WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+        AND track = ? COLLATE NOCASE
     )
   )
 `);
@@ -57,17 +62,18 @@ const getArtistTrackRank = db.prepare(`
 const getTrackScrobbles = db.prepare(`
   SELECT played_at, album
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE AND track = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+    AND track = ? COLLATE NOCASE
   ORDER BY played_at DESC
   LIMIT ? OFFSET ?
 `);
 
 async function buildTrackPage(artist, track) {
-  const stats = getTrackStats.get(artist, track);
+  const stats = getTrackStats.get(artist, artist, track);
   if (!stats || stats.plays === 0) return null;
 
-  const mainAlbum = getMainAlbum.get(artist, track);
-  const rank = getArtistTrackRank.get(artist, artist, track).rank;
+  const mainAlbum = getMainAlbum.get(artist, artist, track);
+  const rank = getArtistTrackRank.get(artist, artist, artist, artist, track).rank;
 
   const [cover, year] = await Promise.all([
     mainAlbum
@@ -78,8 +84,8 @@ async function buildTrackPage(artist, track) {
       : Promise.resolve(null)
   ]);
 
-  const scrobbles = getTrackScrobbles.all(artist, track, SCROBBLE_LIMIT, 0);
-  const mbids = getTrackMbids.get(artist, track) || {};
+  const scrobbles = getTrackScrobbles.all(artist, artist, track, SCROBBLE_LIMIT, 0);
+  const mbids = getTrackMbids.get(artist, artist, track) || {};
 
   return {
     artist,

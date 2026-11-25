@@ -3,6 +3,7 @@ require("dotenv").config();
 const axios = require("axios");
 
 const { fetchWithRetry } = require("../utils/fetchRetry");
+const { ARTIST_COLUMN } = require("../utils/artistName");
 const {
   getListenCoverUrl,
   getReleaseCoverUrl,
@@ -53,12 +54,13 @@ async function getStoredAlbumCover(db, artist, album, size = "500") {
   const row = db.prepare(`
     SELECT release_mbid
     FROM scrobbles
-    WHERE artist = ? COLLATE NOCASE AND album = ? COLLATE NOCASE
+    WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+      AND album = ? COLLATE NOCASE
       AND release_mbid IS NOT NULL AND TRIM(release_mbid) != ''
     GROUP BY release_mbid
     ORDER BY COUNT(*) DESC
     LIMIT 1
-  `).get(artist, album);
+  `).get(artist, artist, album);
 
   if (!row?.release_mbid) return null;
   return resolveCoverUrl(getReleaseCoverUrl(row.release_mbid, size));

@@ -33,12 +33,14 @@ const STATUS_KEY = "sync_status";
 const CHECKPOINT_KEY = "sync_checkpoint";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+const { extractMainArtist } = require("./utils/artistName");
+
 const insertScrobble = db.prepare(`
   INSERT OR IGNORE INTO scrobbles (
     artist, track, album, played_at, track_duration,
-    artist_mbid, release_mbid, recording_mbid
+    artist_mbid, release_mbid, recording_mbid, artist_main, artist_key
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 // A listen already known locally (e.g. imported from the previous Last.fm
@@ -49,7 +51,9 @@ const backfillScrobbleMetadata = db.prepare(`
     track_duration = COALESCE(?, track_duration),
     artist_mbid = COALESCE(?, artist_mbid),
     release_mbid = COALESCE(?, release_mbid),
-    recording_mbid = COALESCE(?, recording_mbid)
+    recording_mbid = COALESCE(?, recording_mbid),
+    artist_main = COALESCE(?, artist_main),
+    artist_key = COALESCE(?, artist_key)
   WHERE artist = ? AND track = ? AND played_at = ?
 `);
 
@@ -93,16 +97,21 @@ const runSyncTransaction = db.transaction((listens, added) => {
       continue;
     }
 
+    const artistMain = extractMainArtist(artist);
+    // Hybrid key: reuse the group's existing key, or key by MBID when the
+    // listen carries one (rekeying the group if it was text-keyed), else text.
+    const artistKey = db.assignArtistKey(artistMain, artistMbid);
+
     const result = insertScrobble.run(
       artist, track, album, playedAt, duration,
-      artistMbid, releaseMbid, recordingMbid
+      artistMbid, releaseMbid, recordingMbid, artistMain, artistKey
     );
 
     if (result.changes > 0) {
       inserted++;
       if (Array.isArray(added)) added.push(listen);
     } else {
-      backfillScrobbleMetadata.run(duration, artistMbid, releaseMbid, recordingMbid, artist, track, playedAt);
+      backfillScrobbleMetadata.run(duration, artistMbid, releaseMbid, recordingMbid, artistMain, artistKey, artist, track, playedAt);
       skipped++;
     }
   }

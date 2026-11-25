@@ -412,7 +412,7 @@ function deleteLeaderboardGroup(groupId) {
 }
 
 const getLocalChartListens = db.prepare(`
-  SELECT artist, track, album, played_at, artist_mbid, release_mbid, recording_mbid
+  SELECT artist, track, album, played_at, artist_mbid, release_mbid, recording_mbid, artist_key
   FROM scrobbles
   WHERE played_at >= ? AND played_at <= ?
 `);
@@ -434,7 +434,8 @@ async function fetchUserChart(username, type, range) {
         playedAt: row.played_at,
         artistMbid: row.artist_mbid,
         releaseMbid: row.release_mbid,
-        recordingMbid: row.recording_mbid
+        recordingMbid: row.recording_mbid,
+        artistKey: row.artist_key
       }));
   } else {
     listens = await getAllListens({

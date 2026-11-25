@@ -190,6 +190,122 @@ if (!hasTrackDuration) {
   console.log("✅ Column track_duration added");
 }
 
+// Main-artist column used when ARTIST_GROUPING=main (default): featurings are
+// stripped from the raw artist tag so stats group like Last.fm/ListenBrainz,
+// which canonicalize listens to the recording's main artist. Always stores the
+// extracted main artist (independent of the mode); read queries pick the
+// artist_main or artist column depending on ARTIST_GROUPING.
+const { extractMainArtist, mbidKey, textKey } = require("./utils/artistName");
+
+if (!scrobbleColumns.some(column => column.name === "artist_main")) {
+  db.prepare("ALTER TABLE scrobbles ADD COLUMN artist_main TEXT").run();
+  console.log("✅ Column artist_main added");
+}
+
+const scrobbleColumnsAfterMain = db.prepare("PRAGMA table_info(scrobbles)").all();
+if (!scrobbleColumnsAfterMain.some(column => column.name === "artist_key")) {
+  db.prepare("ALTER TABLE scrobbles ADD COLUMN artist_key TEXT").run();
+  console.log("✅ Column artist_key added");
+}
+
+// Backfill artist_main, then artist_key. The key is hybrid: if any scrobble of
+// a main artist carries an artist MBID, the whole group is keyed "mbid:<mbid>"
+// (what ListenBrainz does with its server-side mapping); otherwise the key is
+// the normalized main-artist text. This only uses locally stored data — no
+// external API call.
+const backfillArtistColumns = db.transaction(() => {
+  const mainRows = db.prepare(`
+    SELECT DISTINCT artist
+    FROM scrobbles
+    WHERE artist_main IS NULL OR artist_main = ''
+  `).all();
+  const updateMain = db.prepare("UPDATE scrobbles SET artist_main = ? WHERE artist = ?");
+  for (const row of mainRows) {
+    updateMain.run(extractMainArtist(row.artist), row.artist);
+  }
+
+  // Map each main artist to its most frequent non-empty artist MBID.
+  const mbidRows = db.prepare(`
+    SELECT artist_main, artist_mbid, COUNT(*) AS c
+    FROM scrobbles
+    WHERE artist_mbid IS NOT NULL AND TRIM(artist_mbid) != ''
+      AND artist_main IS NOT NULL AND TRIM(artist_main) != ''
+    GROUP BY artist_main, artist_mbid
+    ORDER BY artist_main, c DESC
+  `).all();
+  const mbidByMain = new Map();
+  for (const row of mbidRows) {
+    const key = String(row.artist_main).toLocaleLowerCase();
+    if (!mbidByMain.has(key)) mbidByMain.set(key, row.artist_mbid);
+  }
+
+  const keyRows = db.prepare(`
+    SELECT DISTINCT artist_main
+    FROM scrobbles
+    WHERE artist_key IS NULL OR artist_key = ''
+  `).all();
+  // Exact-match UPDATE so the artist_main index is used (COLLATE NOCASE would
+  // force a full scan per artist). Case variants are covered because DISTINCT
+  // returns each of them separately and textKey() is already lowercase.
+  const updateKey = db.prepare(
+    "UPDATE scrobbles SET artist_key = ? WHERE artist_main = ?"
+  );
+  for (const row of keyRows) {
+    const main = String(row.artist_main || "").trim();
+    if (!main) continue;
+    const mbid = mbidByMain.get(main.toLocaleLowerCase());
+    updateKey.run(mbid ? mbidKey(mbid) : textKey(main), main);
+  }
+
+  return { artists: mainRows.length, keys: keyRows.length };
+});
+
+const backfilled = backfillArtistColumns();
+if (backfilled.artists > 0 || backfilled.keys > 0) {
+  console.log(
+    `✅ artist_main backfilled for ${backfilled.artists} artists, artist_key for ${backfilled.keys} main artists`
+  );
+}
+
+// Assigns the grouping key for a freshly synced listen. If the main artist
+// already has a key, reuse it; if the listen brings an MBID to a text-keyed
+// group, rekey the whole group to the MBID (indexed UPDATE on artist_main).
+// Lookups stay indexed: by normalized text key (case variants of a text-keyed
+// group share the same lowercase key) and by exact artist_main (covers
+// MBID-keyed groups, whose rows no longer carry the text key).
+const getKeyByTextKeyStmt = db.prepare(
+  "SELECT artist_key FROM scrobbles WHERE artist_key = ? LIMIT 1"
+);
+const getKeyByMainStmt = db.prepare(`
+  SELECT artist_key
+  FROM scrobbles
+  WHERE artist_main = ? AND artist_key IS NOT NULL AND artist_key != ''
+  LIMIT 1
+`);
+const rekeyByKeyStmt = db.prepare(
+  "UPDATE scrobbles SET artist_key = ? WHERE artist_key = ?"
+);
+
+function assignArtistKey(artistMain, artistMbid) {
+  const main = String(artistMain || "").trim();
+  if (!main) return null;
+  const mbid = mbidKey(artistMbid);
+  const text = textKey(main);
+
+  let existing = getKeyByTextKeyStmt.get(text)?.artist_key
+    || getKeyByMainStmt.get(main)?.artist_key;
+
+  if (existing) {
+    if (mbid && existing !== mbid && !String(existing).startsWith("mbid:")) {
+      // The group was text-keyed but now has an MBID: rekey it (indexed).
+      rekeyByKeyStmt.run(mbid, existing);
+      return mbid;
+    }
+    return existing;
+  }
+  return mbid || text;
+}
+
 // ListenBrainz migration: keep the MusicBrainz IDs carried by each listen so we
 // can build exact listenbrainz.org links and Cover Art Archive covers.
 // Rows imported from the previous Last.fm source simply keep NULL MBIDs.
@@ -232,6 +348,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_track
   ON scrobbles (artist, track);
 
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_key
+  ON scrobbles (artist_key);
+
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_key_played_at
+  ON scrobbles (artist_key, played_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_main_played_at
+  ON scrobbles (artist_main, played_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_main_album
+  ON scrobbles (artist_main, album);
+
+  CREATE INDEX IF NOT EXISTS idx_scrobbles_artist_main_track
+  ON scrobbles (artist_main, track);
+
   CREATE INDEX IF NOT EXISTS idx_scrobbles_release_mbid
   ON scrobbles (release_mbid);
 
@@ -242,3 +373,4 @@ db.exec(`
 module.exports = db;
 module.exports.dataDir = dataDir;
 module.exports.dbPath = dbPath;
+module.exports.assignArtistKey = assignArtistKey;

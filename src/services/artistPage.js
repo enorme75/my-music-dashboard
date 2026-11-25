@@ -1,4 +1,5 @@
 const db = require("../db");
+const { ARTIST_COLUMN } = require("../utils/artistName");
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
 const { getAlbumUrl, getTrackUrl, getArtistUrl } = require("../utils/listenbrainzUrl");
 const { ensureArtistImage, getCachedArtistImage } = require("./artistImageCache");
@@ -23,7 +24,7 @@ const getArtistStats = db.prepare(`
     COUNT(DISTINCT NULLIF(TRIM(album), '')) AS uniqueAlbums,
     MAX(artist_mbid) AS artist_mbid
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
 `);
 
 const getArtistTopTracks = db.prepare(`
@@ -32,7 +33,7 @@ const getArtistTopTracks = db.prepare(`
     COUNT(*) AS plays,
     MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
   GROUP BY track
   ORDER BY plays DESC
   LIMIT 10
@@ -46,7 +47,7 @@ const getArtistAlbums = db.prepare(`
     COUNT(*) AS plays,
     MIN(played_at) AS firstPlay
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
     AND album IS NOT NULL
     AND TRIM(album) != ''
   GROUP BY album
@@ -55,11 +56,11 @@ const getArtistAlbums = db.prepare(`
 `);
 
 async function buildArtistPage(artist, lang) {
-  const stats = getArtistStats.get(artist);
+  const stats = getArtistStats.get(artist, artist);
   if (!stats || stats.plays === 0) return null;
 
-  const topTracks = getArtistTopTracks.all(artist);
-  const albums = getArtistAlbums.all(artist);
+  const topTracks = getArtistTopTracks.all(artist, artist);
+  const albums = getArtistAlbums.all(artist, artist);
 
   const [image, info, discogs, enrichedAlbums] = await Promise.all([
     ensureArtistImage(artist).catch(() => null),
@@ -109,11 +110,11 @@ async function buildArtistPage(artist, lang) {
 // (no network). Album covers fall back to the Cover Art Archive URL built from
 // the release MBID stored with the listens, so no MusicBrainz call is needed.
 function buildFastArtistPage(artist, lang) {
-  const stats = getArtistStats.get(artist);
+  const stats = getArtistStats.get(artist, artist);
   if (!stats || stats.plays === 0) return null;
 
-  const topTracks = getArtistTopTracks.all(artist);
-  const albums = getArtistAlbums.all(artist);
+  const topTracks = getArtistTopTracks.all(artist, artist);
+  const albums = getArtistAlbums.all(artist, artist);
   const info = getCachedArtistBio(artist);
   const image = getCachedArtistImage(artist);
   const discogs = getCachedDiscogsLink("artist", artist, null);

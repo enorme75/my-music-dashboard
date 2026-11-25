@@ -1,4 +1,5 @@
 const { normalizeListen } = require("./listenbrainz");
+const { artistGroupKey, mainArtist } = require("./artistName");
 
 const LEADERBOARD_TYPES = new Set(["artists", "albums", "tracks"]);
 
@@ -39,14 +40,23 @@ function normalizeChartItems(typeInput, value) {
   const items = [];
 
   for (const row of rows) {
-    const name = normalizeText(row?.name);
-    const artist = type === "artists" ? null : extractArtistName(row?.artist);
+    const rawName = normalizeText(row?.name);
+    const name = type === "artists" ? mainArtist(rawName) : rawName;
+    const rawArtist = type === "artists" ? null : extractArtistName(row?.artist);
+    const artist = rawArtist ? mainArtist(rawArtist) : rawArtist;
     const playcount = Math.max(0, Number.parseInt(row?.playcount ?? row?.listen_count ?? "0", 10) || 0);
 
     if (!name || playcount <= 0 || (type !== "artists" && !artist)) continue;
 
+    // Hybrid key: MBID when the stat row carries one (like ListenBrainz), else
+    // the normalized main-artist text.
+    const keyBase = artistGroupKey({
+      artistMbid: row?.mbid,
+      artistMain: type === "artists" ? name : artist
+    });
+
     items.push({
-      key: type === "artists" ? normalizeKey(name) : compoundKey(artist, name),
+      key: type === "artists" ? keyBase : `${keyBase}\u0000${normalizeKey(name)}`,
       name,
       artist,
       playcount,
@@ -69,25 +79,35 @@ function buildChartItemsFromListens(typeInput, listens, { getArtistUrl, getAlbum
     const listen = raw?.track_metadata ? normalizeListen(raw) : raw;
     if (!listen?.artist || !listen?.track || !Number.isInteger(listen.playedAt)) continue;
 
+    // Group by the main artist so featurings count towards the album artist,
+    // like Last.fm/ListenBrainz (ARTIST_GROUPING=main, the default). The group
+    // key is hybrid: stored artist_key / MBID when available, else text.
+    const artistName = mainArtist(listen.artist);
+    const keyBase = artistGroupKey({
+      artistKey: listen.artistKey,
+      artistMbid: listen.artistMbid,
+      artistMain: artistName
+    });
+
     let key;
     let name;
     let artist = null;
     let mbid = null;
 
     if (type === "artists") {
-      key = normalizeKey(listen.artist);
-      name = listen.artist;
+      key = keyBase;
+      name = artistName;
       mbid = listen.artistMbid;
     } else if (type === "albums") {
       if (!listen.album) continue;
-      key = compoundKey(listen.artist, listen.album);
+      key = `${keyBase}\u0000${normalizeKey(listen.album)}`;
       name = listen.album;
-      artist = listen.artist;
+      artist = artistName;
       mbid = listen.releaseMbid;
     } else {
-      key = compoundKey(listen.artist, listen.track);
+      key = `${keyBase}\u0000${normalizeKey(listen.track)}`;
       name = listen.track;
-      artist = listen.artist;
+      artist = artistName;
       mbid = listen.recordingMbid;
     }
 

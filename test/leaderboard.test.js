@@ -16,7 +16,7 @@ test("normalizes chart rows with playcount or ListenBrainz listen_count", () => 
     mbid: "a74b1b7f-71a5-4011-9441-d0b5e4b13c6f",
     url: "https://listenbrainz.org/artist/a74b1b7f-71a5-4011-9441-d0b5e4b13c6f/"
   }), [{
-    key: "radiohead",
+    key: "mbid:a74b1b7f-71a5-4011-9441-d0b5e4b13c6f",
     name: "Radiohead",
     artist: null,
     playcount: 12,
@@ -30,7 +30,7 @@ test("normalizes chart rows with playcount or ListenBrainz listen_count", () => 
     playcount: "8"
   }]);
   assert.equal(albums[0].artist, "Björk");
-  assert.equal(albums[0].key, "björk\u0000vespertine");
+  assert.equal(albums[0].key, "txt:björk\u0000vespertine");
 
   const tracks = normalizeChartItems("tracks", [{
     name: "Jóga",
@@ -60,13 +60,13 @@ test("aggregates raw ListenBrainz listens into artist, album and track charts", 
 
   const albums = buildChartItemsFromListens("albums", listens, urlBuilders);
   assert.equal(albums.length, 2); // the listen without release_name is skipped
-  assert.equal(albums[0].key, "radiohead\u0000pablo honey");
+  assert.equal(albums[0].key, "mbid:ar\u0000pablo honey");
   assert.equal(albums[0].playcount, 2);
   assert.equal(albums[0].url, "https://listenbrainz.org/release/rel1/");
 
   const tracks = buildChartItemsFromListens("tracks", listens, urlBuilders);
   assert.equal(tracks.length, 3);
-  assert.equal(tracks[0].key, "radiohead\u0000creep");
+  assert.equal(tracks[0].key, "mbid:ar\u0000creep");
   assert.equal(tracks[0].url, "https://listenbrainz.org/track/tr1/");
 });
 

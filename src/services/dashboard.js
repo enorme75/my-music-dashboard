@@ -1,4 +1,5 @@
 const db = require("../db");
+const { ARTIST_COLUMN, ARTIST_KEY_COLUMN } = require("../utils/artistName");
 const { fillMissingDates, getLocalDayModifier, getLocalYearToDate, parseTimezoneOffset } = require("../utils/dateRange");
 const { getDashboardFilterContext, getTimezoneOffset } = require("../utils/dashboardFilter");
 const { getArtistUrl, getAlbumUrl, getTrackUrl } = require("../utils/listenbrainzUrl");
@@ -23,7 +24,7 @@ function getSummaryRow(filter) {
   return db.prepare(`
     SELECT
       COUNT(*) AS totalPlays,
-      COUNT(DISTINCT artist) AS totalArtists,
+      COUNT(DISTINCT ${ARTIST_KEY_COLUMN}) AS totalArtists,
       COUNT(DISTINCT date(played_at, 'unixepoch')) AS days,
       COALESCE(SUM(COALESCE(track_duration, ?)), 0) AS totalSeconds
     FROM scrobbles
@@ -101,10 +102,10 @@ function getSummary(context, query = {}) {
 
 function getTopArtistRows(filter) {
   return db.prepare(`
-    SELECT artist, COUNT(*) AS plays, MAX(artist_mbid) AS artist_mbid
+    SELECT ${ARTIST_COLUMN} AS artist, COUNT(*) AS plays, MAX(artist_mbid) AS artist_mbid
     FROM scrobbles
     ${whereClause(filter)}
-    GROUP BY artist
+    GROUP BY ${ARTIST_KEY_COLUMN}
     ORDER BY plays DESC
     LIMIT 10
   `).all(...filter.params);
@@ -113,7 +114,7 @@ function getTopArtistRows(filter) {
 function getTopAlbumRows(filter) {
   return db.prepare(`
     SELECT
-      artist,
+      ${ARTIST_COLUMN} AS artist,
       album,
       MAX(NULLIF(album_image, '')) AS album_image,
       MAX(artist_mbid) AS artist_mbid,
@@ -123,7 +124,7 @@ function getTopAlbumRows(filter) {
     WHERE album IS NOT NULL
       AND TRIM(album) != ''
       ${filter.where ? `AND ${filter.where}` : ""}
-    GROUP BY artist, album
+    GROUP BY ${ARTIST_KEY_COLUMN}, album
     ORDER BY plays DESC
     LIMIT 12
   `).all(...filter.params);
@@ -133,7 +134,7 @@ function getTopTrackRows(filter) {
   return db.prepare(`
     SELECT
       track,
-      artist,
+      ${ARTIST_COLUMN} AS artist,
       album,
       MAX(NULLIF(album_image, '')) AS album_image,
       MAX(artist_mbid) AS artist_mbid,
@@ -144,7 +145,7 @@ function getTopTrackRows(filter) {
     WHERE album IS NOT NULL
       AND TRIM(album) != ''
       ${filter.where ? `AND ${filter.where}` : ""}
-    GROUP BY track, artist, album
+    GROUP BY track, ${ARTIST_KEY_COLUMN}, album
     ORDER BY plays DESC
     LIMIT 20
   `).all(...filter.params);
@@ -239,10 +240,10 @@ function getActivityCalendar(timezoneOffset, now = Date.now()) {
 
 function getArtistEvolution(filter, topCount = 6) {
   const topArtists = db.prepare(`
-    SELECT artist
+    SELECT ${ARTIST_COLUMN} AS artist, ${ARTIST_KEY_COLUMN} AS artist_key
     FROM scrobbles
     ${whereClause(filter)}
-    GROUP BY artist
+    GROUP BY ${ARTIST_KEY_COLUMN}
     ORDER BY COUNT(*) DESC
     LIMIT ?
   `).all(...filter.params, topCount);
@@ -254,15 +255,15 @@ function getArtistEvolution(filter, topCount = 6) {
   const placeholders = topArtists.map(() => "?").join(", ");
   const series = db.prepare(`
     SELECT
-      artist,
+      ${ARTIST_COLUMN} AS artist,
       strftime('%Y-%m', played_at, 'unixepoch') AS month,
       COUNT(*) AS plays
     FROM scrobbles
-    WHERE artist IN (${placeholders})
+    WHERE ${ARTIST_KEY_COLUMN} IN (${placeholders})
       ${filter.where ? `AND ${filter.where}` : ""}
-    GROUP BY artist, month
+    GROUP BY ${ARTIST_KEY_COLUMN}, month
     ORDER BY month
-  `).all(...topArtists.map(row => row.artist), ...filter.params);
+  `).all(...topArtists.map(row => row.artist_key), ...filter.params);
 
   const months = [...new Set(series.map(row => row.month))].sort();
 

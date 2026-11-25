@@ -7,6 +7,7 @@ const {
   getUsername
 } = require("../utils/listenbrainz");
 const { getUserUrl } = require("../utils/listenbrainzUrl");
+const { ARTIST_COLUMN, mainArtist } = require("../utils/artistName");
 const { getReleaseCoverUrl } = require("../utils/coverArtArchive");
 const {
   ensureAlbumCover,
@@ -127,22 +128,22 @@ function calculateCompatibilityScore(commonArtists, commonAlbums, commonTracks) 
 
 function getLocalListeningMaps(db) {
   const artists = db.prepare(`
-    SELECT artist, COUNT(*) AS plays
+    SELECT ${ARTIST_COLUMN} AS artist, COUNT(*) AS plays
     FROM scrobbles
-    GROUP BY artist
+    GROUP BY ${ARTIST_COLUMN}
   `).all();
 
   const albums = db.prepare(`
-    SELECT album, artist, COUNT(*) AS plays
+    SELECT album, ${ARTIST_COLUMN} AS artist, COUNT(*) AS plays
     FROM scrobbles
     WHERE album IS NOT NULL AND TRIM(album) != ''
-    GROUP BY album, artist
+    GROUP BY album, ${ARTIST_COLUMN}
   `).all();
 
   const tracks = db.prepare(`
-    SELECT track, artist, COUNT(*) AS plays
+    SELECT track, ${ARTIST_COLUMN} AS artist, COUNT(*) AS plays
     FROM scrobbles
-    GROUP BY track, artist
+    GROUP BY track, ${ARTIST_COLUMN}
   `).all();
 
   const accumulate = (rows, getKey) => {
@@ -166,7 +167,7 @@ function getLocalListeningMaps(db) {
 // Maps ListenBrainz stats payloads onto the shapes used by the comparison UI.
 function mapStatsArtists(payload) {
   return (payload?.items || []).map(item => ({
-    name: String(item.artist_name || "").trim(),
+    name: mainArtist(String(item.artist_name || "").trim()),
     playcount: String(item.listen_count ?? 0),
     mbid: item.artist_mbid || null,
     image: null
@@ -176,7 +177,7 @@ function mapStatsArtists(payload) {
 function mapStatsReleases(payload) {
   return (payload?.items || []).map(item => ({
     name: String(item.release_name || "").trim(),
-    artist: String(item.artist_name || "").trim(),
+    artist: mainArtist(String(item.artist_name || "").trim()),
     playcount: String(item.listen_count ?? 0),
     mbid: item.release_mbid || null,
     image: getReleaseCoverUrl(item.caa_release_mbid || item.release_mbid, "500")
@@ -186,7 +187,7 @@ function mapStatsReleases(payload) {
 function mapStatsRecordings(payload) {
   return (payload?.items || []).map(item => ({
     name: String(item.track_name || "").trim(),
-    artist: String(item.artist_name || "").trim(),
+    artist: mainArtist(String(item.artist_name || "").trim()),
     playcount: String(item.listen_count ?? 0),
     mbid: item.recording_mbid || null,
     image: getReleaseCoverUrl(item.caa_release_mbid || item.release_mbid, "500")
@@ -280,14 +281,14 @@ async function compareWithFriend(db, friendUsername) {
         (
           SELECT COUNT(*)
           FROM (
-            SELECT artist, album
+            SELECT ${ARTIST_COLUMN}, album
             FROM scrobbles
             WHERE album IS NOT NULL AND TRIM(album) != ''
-            GROUP BY artist, album
+            GROUP BY ${ARTIST_COLUMN}, album
           )
         ) AS albumsCount,
         (
-          SELECT COUNT(DISTINCT artist)
+          SELECT COUNT(DISTINCT ${ARTIST_COLUMN})
           FROM scrobbles
         ) AS artistsCount
       FROM scrobbles

@@ -1,6 +1,7 @@
 const { createCanvas } = require("canvas");
 
 const db = require("../db");
+const { ARTIST_COLUMN, ARTIST_KEY_COLUMN } = require("../utils/artistName");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureArtistImage } = require("./artistImageCache");
 const { ensureTrackCover } = require("./trackCoverCache");
@@ -81,14 +82,14 @@ function queryShareData(start, types, limits) {
     data.albums = db.prepare(`
       SELECT
         album,
-        artist,
+        ${ARTIST_COLUMN} AS artist,
         MAX(NULLIF(album_image, '')) AS album_image,
         COUNT(*) AS play_count
       FROM scrobbles
       WHERE played_at >= ?
         AND album IS NOT NULL
         AND TRIM(album) != ''
-      GROUP BY album, artist
+      GROUP BY album, ${ARTIST_KEY_COLUMN}
       ORDER BY play_count DESC
       LIMIT ?
     `).all(start, limits.albums);
@@ -97,13 +98,13 @@ function queryShareData(start, types, limits) {
   if (types.includes("artists")) {
     data.artists = db.prepare(`
       SELECT
-        s.artist,
+        s.${ARTIST_COLUMN} AS artist,
         MAX(NULLIF(a.artist_image, '')) AS artist_image,
         COUNT(*) AS play_count
       FROM scrobbles s
-      LEFT JOIN artists a ON a.artist = s.artist
+      LEFT JOIN artists a ON a.artist = s.${ARTIST_COLUMN}
       WHERE s.played_at >= ?
-      GROUP BY s.artist
+      GROUP BY s.${ARTIST_KEY_COLUMN}
       ORDER BY play_count DESC
       LIMIT ?
     `).all(start, limits.artists);
@@ -113,13 +114,13 @@ function queryShareData(start, types, limits) {
     data.tracks = db.prepare(`
       SELECT
         track,
-        artist,
+        ${ARTIST_COLUMN} AS artist,
         album,
         MAX(NULLIF(album_image, '')) AS album_image,
         COUNT(*) AS play_count
       FROM scrobbles
       WHERE played_at >= ?
-      GROUP BY track, artist, album
+      GROUP BY track, ${ARTIST_KEY_COLUMN}, album
       ORDER BY play_count DESC
       LIMIT ?
     `).all(start, limits.tracks);

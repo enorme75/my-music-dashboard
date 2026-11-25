@@ -1,4 +1,5 @@
 const db = require("../db");
+const { ARTIST_COLUMN, ARTIST_KEY_COLUMN } = require("../utils/artistName");
 const { getArtistUrl, getAlbumUrl, getTrackUrl } = require("../utils/listenbrainzUrl");
 const { getCachedArtistImage } = require("./artistImageCache");
 
@@ -23,17 +24,17 @@ function likePattern(query) {
 }
 
 const searchArtists = db.prepare(`
-  SELECT artist, COUNT(*) AS plays, MAX(artist_mbid) AS artist_mbid
+  SELECT ${ARTIST_COLUMN} AS artist, COUNT(*) AS plays, MAX(artist_mbid) AS artist_mbid
   FROM scrobbles
   WHERE norm(artist) LIKE ? ESCAPE '\\'
-  GROUP BY artist
+  GROUP BY ${ARTIST_KEY_COLUMN}
   ORDER BY plays DESC
   LIMIT 10
 `);
 
 const searchAlbums = db.prepare(`
   SELECT
-    artist,
+    ${ARTIST_COLUMN} AS artist,
     album,
     COUNT(*) AS plays,
     MAX(NULLIF(album_image, '')) AS album_image,
@@ -43,14 +44,14 @@ const searchAlbums = db.prepare(`
   WHERE norm(album) LIKE ? ESCAPE '\\'
     AND album IS NOT NULL
     AND TRIM(album) != ''
-  GROUP BY artist, album
+  GROUP BY ${ARTIST_KEY_COLUMN}, album
   ORDER BY plays DESC
   LIMIT 10
 `);
 
 const searchTracks = db.prepare(`
   SELECT
-    artist,
+    ${ARTIST_COLUMN} AS artist,
     track,
     COUNT(*) AS plays,
     MAX(artist_mbid) AS artist_mbid,
@@ -58,7 +59,7 @@ const searchTracks = db.prepare(`
     MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
   WHERE norm(track) LIKE ? ESCAPE '\\'
-  GROUP BY artist, track
+  GROUP BY ${ARTIST_KEY_COLUMN}, track
   ORDER BY plays DESC
   LIMIT 10
 `);

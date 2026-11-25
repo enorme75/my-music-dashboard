@@ -11,6 +11,7 @@ const { createCanvas, loadImage } = require("canvas");
 const db = require("./db");
 const { startSync, getSyncStatus } = require("./sync");
 const { getActiveFilter } = require("./utils/filters");
+const { ARTIST_COLUMN, ARTIST_KEY_COLUMN } = require("./utils/artistName");
 const { fillMissingDates, getLocalDayModifier, parseTimezoneOffset } = require("./utils/dateRange");
 const { mapWithConcurrency } = require("./utils/mapWithConcurrency");
 const { sanitizeError } = require("./utils/sanitizeAxios");
@@ -300,10 +301,10 @@ app.get("/api/top-artists", asyncRoute(async (req, res) => {
   const filter = getActiveFilter(req.query);
 
   const rows = db.prepare(`
-    SELECT artist, COUNT(*) AS plays
+    SELECT ${ARTIST_COLUMN} AS artist, COUNT(*) AS plays
     FROM scrobbles
     ${filter.where ? `WHERE ${filter.where}` : ""}
-    GROUP BY artist
+    GROUP BY ${ARTIST_KEY_COLUMN}
     ORDER BY plays DESC
     LIMIT 10
   `).all(...filter.params);
@@ -323,7 +324,7 @@ app.get("/api/top-tracks", asyncRoute(async (req, res) => {
   const rows = db.prepare(`
     SELECT
       track,
-      artist,
+      ${ARTIST_COLUMN} AS artist,
       album,
       MAX(NULLIF(album_image, '')) AS album_image,
       COUNT(*) AS plays
@@ -331,7 +332,7 @@ app.get("/api/top-tracks", asyncRoute(async (req, res) => {
     WHERE album IS NOT NULL
       AND TRIM(album) != ''
       ${filter.where ? `AND ${filter.where}` : ""}
-    GROUP BY track, artist, album
+    GROUP BY track, ${ARTIST_KEY_COLUMN}, album
     ORDER BY plays DESC
     LIMIT 20
   `).all(...filter.params);
@@ -439,7 +440,7 @@ app.get("/api/top-albums", asyncRoute(async (req, res) => {
 
   const albums = db.prepare(`
     SELECT
-      artist,
+      ${ARTIST_COLUMN} AS artist,
       album,
       MAX(NULLIF(album_image, '')) AS album_image,
       COUNT(*) AS plays
@@ -447,7 +448,7 @@ app.get("/api/top-albums", asyncRoute(async (req, res) => {
     WHERE album IS NOT NULL
       AND TRIM(album) != ''
       ${filter.where ? `AND ${filter.where}` : ""}
-    GROUP BY artist, album
+    GROUP BY ${ARTIST_KEY_COLUMN}, album
     ORDER BY plays DESC
     LIMIT 12
   `).all(...filter.params);
@@ -518,8 +519,8 @@ app.post("/api/album-cover", (req, res, next) => {
   const previousCover = db.prepare(`
     SELECT MAX(NULLIF(album_image, '')) AS album_image
     FROM scrobbles
-    WHERE artist = ? AND album = ?
-  `).get(artist, album)?.album_image;
+    WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE) AND album = ?
+  `).get(artist, artist, album)?.album_image;
 
   await fs.mkdir(albumCoversDir, { recursive: true });
   await fs.writeFile(filePath, imageBuffer);
@@ -528,8 +529,8 @@ app.post("/api/album-cover", (req, res, next) => {
   db.prepare(`
     UPDATE scrobbles
     SET album_image = ?
-    WHERE artist = ? AND album = ?
-  `).run(publicPath, artist, album);
+    WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE) AND album = ?
+  `).run(publicPath, artist, artist, album);
   invalidateDashboardCache();
 
   if (previousCover?.startsWith("/covers/albums/") && previousCover !== publicPath) {
@@ -553,11 +554,11 @@ app.post("/api/album-tracks", (req, res) => {
     SELECT track, COUNT(*) AS plays
     FROM scrobbles
     WHERE album = ?
-      AND artist = ?
+      AND (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
       ${filter.where ? `AND ${filter.where}` : ""}
     GROUP BY track
     ORDER BY plays DESC
-  `).all(album, artist, ...filter.params);
+  `).all(album, artist, artist, ...filter.params);
 
   res.json(tracks);
 });
@@ -716,22 +717,22 @@ app.get("/api/user-stats", asyncRoute(async (req, res) => {
     userStatsCache.get("db-stats", USER_STATS_CACHE_TTL_MS, () => Promise.resolve(db.prepare(`
       SELECT
         COUNT(*) AS totalScrobbles,
-        COUNT(DISTINCT artist) AS uniqueArtists,
+        COUNT(DISTINCT ${ARTIST_KEY_COLUMN}) AS uniqueArtists,
         (
           SELECT COUNT(*)
           FROM (
-            SELECT artist, album
+            SELECT ${ARTIST_KEY_COLUMN}, album
             FROM scrobbles
             WHERE album IS NOT NULL AND TRIM(album) != ''
-            GROUP BY artist, album
+            GROUP BY ${ARTIST_KEY_COLUMN}, album
           )
         ) AS uniqueAlbums,
         (
           SELECT COUNT(*)
           FROM (
-            SELECT artist, track
+            SELECT ${ARTIST_KEY_COLUMN}, track
             FROM scrobbles
-            GROUP BY artist, track
+            GROUP BY ${ARTIST_KEY_COLUMN}, track
           )
         ) AS uniqueTracks,
         MIN(played_at) AS joinedDate

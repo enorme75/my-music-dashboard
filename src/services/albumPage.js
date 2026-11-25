@@ -1,4 +1,5 @@
 const db = require("../db");
+const { ARTIST_COLUMN } = require("../utils/artistName");
 const { getTrackUrl, getAlbumUrl, getArtistUrl } = require("../utils/listenbrainzUrl");
 const { ensureAlbumCover, getCachedAlbumCover } = require("./albumCoverCache");
 const { ensureAlbumYear, getCachedAlbumYear } = require("./albumYearCache");
@@ -17,7 +18,8 @@ const getAlbumStats = db.prepare(`
     MAX(artist_mbid) AS artist_mbid,
     MAX(release_mbid) AS release_mbid
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE AND album = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+    AND album = ? COLLATE NOCASE
 `);
 
 const getAlbumTracks = db.prepare(`
@@ -27,16 +29,17 @@ const getAlbumTracks = db.prepare(`
     MAX(played_at) AS lastPlay,
     MAX(recording_mbid) AS recording_mbid
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE AND album = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
+    AND album = ? COLLATE NOCASE
   GROUP BY track
   ORDER BY plays DESC
 `);
 
 async function buildAlbumPage(artist, album) {
-  const stats = getAlbumStats.get(artist, album);
+  const stats = getAlbumStats.get(artist, artist, album);
   if (!stats || stats.plays === 0) return null;
 
-  const tracks = getAlbumTracks.all(artist, album);
+  const tracks = getAlbumTracks.all(artist, artist, album);
   const [cover, year, discogs, albumTracks] = await Promise.all([
     ensureAlbumCover(artist, album).catch(() => null),
     ensureAlbumYear(artist, album),
@@ -72,10 +75,10 @@ async function buildAlbumPage(artist, album) {
 
 // Fast path: local DB + cached metadata only, no network calls.
 function buildFastAlbumPage(artist, album) {
-  const stats = getAlbumStats.get(artist, album);
+  const stats = getAlbumStats.get(artist, artist, album);
   if (!stats || stats.plays === 0) return null;
 
-  const tracks = getAlbumTracks.all(artist, album);
+  const tracks = getAlbumTracks.all(artist, artist, album);
   const cachedCover = getCachedAlbumCover(artist, album);
   const year = getCachedAlbumYear(artist, album);
   const discogs = getCachedDiscogsLink("album", artist, album);

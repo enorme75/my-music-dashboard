@@ -2,6 +2,17 @@
 
 All notable changes to YourLastFM are documented in this file.
 
+## [2.1.0] - 2026-11-25 — regroupement des scrobbles par artiste principal
+
+### Added
+- **Nouveau réglage `ARTIST_GROUPING`** (`main` par défaut, `raw` pour l'ancien comportement) : en mode `main`, chaque scrobble est compté pour l'**artiste principal** du morceau, comme Last.fm/ListenBrainz qui canonicalisent via MusicBrainz (« Westside Gunn/Keisha Plum » → « Westside Gunn »). S'applique aux tops artistes/albums/morceaux, stats « artistes uniques », recherche, leaderboards, comparaison amis, pages artiste/album/titre et images recap.
+- **Clé de groupe hybride** : nouvelle colonne `artist_key` — `mbid:<artist_mbid>` quand un MBID est connu localement (groupes MBID identiques fusionnés, ex. variantes de casse), sinon `txt:<artiste principal>`. Aucun appel API supplémentaire (données locales uniquement) ; backfill automatique au démarrage, index dédiés, rekey du groupe si un MBID arrive plus tard à la synchro.
+- Nouvelles colonnes `scrobbles.artist_main` / `artist_key` (migration auto + backfill) ; index `artist_key`, `artist_main+…`.
+- `extractMainArtist()` : extraction textuelle de l'artiste principal (séparateurs `feat./ft./featuring/with/x`, `,` `;` `&` `/`) avec gardes (« Tyler, The Creator », « AC/DC », « Simon & Garfunkel » restent intacts).
+
+### Tests
+- `test/artistName.test.js` (extraction, gardes, clés hybrides) ; `test/leaderboard.test.js` adapté aux nouvelles clés. 88 tests OK, `npm run check` OK.
+
 ## [2.0.0] - 2026-11-22 — migration de la source Last.fm vers ListenBrainz
 
 ### Changed (breaking)

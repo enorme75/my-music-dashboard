@@ -1,4 +1,5 @@
 const db = require("../db");
+const { ARTIST_COLUMN } = require("../utils/artistName");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { getDeezerTrackImage } = require("./deezer-track");
 const { getTrackCoverInfo } = require("./trackMetadata");
@@ -7,7 +8,7 @@ const { isUsableImageUrl, normalizeImageUrl } = require("../utils/imageUrl");
 const getTrackRows = db.prepare(`
   SELECT album, album_image
   FROM scrobbles
-  WHERE artist = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
     AND track = ? COLLATE NOCASE
   ORDER BY played_at DESC
 `);
@@ -20,7 +21,7 @@ const updateTrackCover = db.prepare(`
       WHEN (album IS NULL OR TRIM(album) = '') AND ? IS NOT NULL THEN ?
       ELSE album
     END
-  WHERE artist = ? COLLATE NOCASE
+  WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
     AND track = ? COLLATE NOCASE
 `);
 
@@ -29,7 +30,7 @@ const failedUntil = new Map();
 const failureTtlMs = Math.max(60000, Number(process.env.IMAGE_FAILURE_CACHE_MS) || 10 * 60 * 1000);
 
 function getCachedTrackCover(artist, track) {
-  const rows = getTrackRows.all(artist, track);
+  const rows = getTrackRows.all(artist, artist, track);
 
   for (const row of rows) {
     const image = normalizeImageUrl(row.album_image);
@@ -49,7 +50,7 @@ function rememberTrackCover(artist, track, album, image) {
   if (!artist || !track || !isUsableImageUrl(normalized)) return null;
 
   const normalizedAlbum = String(album || "").trim() || null;
-  updateTrackCover.run(normalized, normalizedAlbum, normalizedAlbum, artist, track);
+  updateTrackCover.run(normalized, normalizedAlbum, normalizedAlbum, artist, artist, track);
   return normalized;
 }
 

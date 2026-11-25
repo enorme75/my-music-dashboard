@@ -3,6 +3,7 @@
 // page build finds them already cached instead of paying the MusicBrainz /
 // Cover Art Archive lookup latency on the request path.
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
+const { mainArtist } = require("../utils/artistName");
 const { ensureArtistImage } = require("./artistImageCache");
 const { ensureAlbumCover } = require("./albumCoverCache");
 const { ensureTrackDuration } = require("./trackDurationCache");
@@ -17,9 +18,12 @@ async function prewarmMetadata(listens) {
 
   for (const listen of Array.isArray(listens) ? listens : []) {
     if (!listen?.artist || !listen?.track) continue;
-    artists.add(listen.artist);
-    if (listen.album) albums.add(`${listen.artist}\u0000${listen.album}`);
-    tracks.add(`${listen.artist}\u0000${listen.track}`);
+    // Warm the caches under the main artist, which is the key used by the
+    // aggregated views (ARTIST_GROUPING=main).
+    const artist = mainArtist(listen.artist);
+    artists.add(artist);
+    if (listen.album) albums.add(`${artist}\u0000${listen.album}`);
+    tracks.add(`${artist}\u0000${listen.track}`);
   }
 
   const tasks = [];

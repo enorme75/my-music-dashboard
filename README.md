@@ -120,6 +120,7 @@ The defaults are documented in `.env.example`.
 | `LISTENBRAINZ_MAX_LISTENS_PER_REQUEST` | Batch size for the listens API (server caps at 1000) | `1000` |
 | `MUSICBRAINZ_REQUEST_DELAY_MS` | Delay between MusicBrainz requests (1 req/s max) | `1100` |
 | `ARTIST_BIO_LANG` | Language of artist bios (Wikipedia); English Wikipedia is richer, so `en` is the default | `en` |
+| `ARTIST_GROUPING` | `main` (default) groups scrobbles by the main artist (featurings stripped, like Last.fm/ListenBrainz); groups are keyed by the MusicBrainz artist MBID when one is stored locally, else by main-artist name — no extra API calls. `raw` counts each full artist string as its own artist | `main` |
 | `DASHBOARD_CACHE_TTL_MS` | Persistent dashboard cache lifetime in milliseconds; `0` disables time-based expiry | `300000` |
 | `STATIC_ASSET_CACHE_SECONDS` | Browser cache lifetime for local JavaScript, CSS, and images | `300` |
 | `LEADERBOARD_CACHE_TTL_MS` | Persistent lifetime for generated leaderboard results; `0` disables time-based expiry | `900000` |
