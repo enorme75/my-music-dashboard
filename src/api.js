@@ -477,7 +477,7 @@ app.get("/api/top-list", asyncRoute(async (req, res) => {
   const result = await getTopList(type, filter, {
     limit: req.query.limit,
     offset: req.query.offset
-  }, artist);
+  }, artist, { cachedOnly: req.query.cachedOnly === "1" });
 
   res.json(result);
 }));

@@ -5,14 +5,15 @@
 const db = require("../db");
 const { ARTIST_COLUMN, ARTIST_KEY_COLUMN } = require("../utils/artistName");
 const { getAlbumUrl, getArtistUrl, getTrackUrl } = require("../utils/listenbrainzUrl");
-const { ensureArtistImage } = require("./artistImageCache");
-const { ensureAlbumCover } = require("./albumCoverCache");
-const { ensureTrackDuration } = require("./trackDurationCache");
+const { ensureArtistImage, getCachedArtistImage, rememberArtistImage } = require("./artistImageCache");
+const { ensureAlbumCover, getCachedAlbumCover, rememberAlbumCover } = require("./albumCoverCache");
 const { mapWithConcurrency } = require("../utils/mapWithConcurrency");
 
-const EXTERNAL_REQUEST_CONCURRENCY = Math.max(
-  1,
-  Number.parseInt(process.env.EXTERNAL_REQUEST_CONCURRENCY || "4", 10) || 4
+// List pages enrich many rows at once (artist images, album covers): use a
+// wider lane than the default so pagination stays responsive.
+const LIST_CONCURRENCY = Math.max(
+  4,
+  2 * (Number.parseInt(process.env.EXTERNAL_REQUEST_CONCURRENCY || "4", 10) || 4)
 );
 
 const DEFAULT_LIMIT = 50;
@@ -43,6 +44,7 @@ const TYPES = {
       album,
       MAX(recording_mbid) AS recording_mbid,
       MAX(NULLIF(album_image, '')) AS album_image,
+      MAX(track_duration) AS track_duration,
       COUNT(*) AS plays
     `,
     where: "album IS NOT NULL AND TRIM(album) != ''",
@@ -92,28 +94,47 @@ function buildTopListQuery(type, filter = {}, { limit, offset } = {}, artist = n
   };
 }
 
-async function enrichRow(type, row) {
+// Cache-only enrichment: instant, no network. Used to answer list pages
+// immediately; missing images/covers are enriched in the background.
+function cachedEnrich(type, row) {
   if (type === "artists") {
-    return { ...row, image: await ensureArtistImage(row.artist).catch(() => null) };
+    return { image: getCachedArtistImage(row.artist) };
   }
-  if (type === "albums") {
-    return {
-      ...row,
-      album_image: await ensureAlbumCover(row.artist, row.album).catch(() => null)
-    };
+  const cover = getCachedAlbumCover(row.artist, row.album) || row.album_image || null;
+  if (type === "tracks") {
+    return { album_image: cover, total_seconds: (row.track_duration || 0) * row.plays };
   }
-  const [duration, albumImage] = await Promise.all([
-    ensureTrackDuration(row.artist, row.track).catch(() => null),
-    ensureAlbumCover(row.artist, row.album).catch(() => null)
-  ]);
-  return {
-    ...row,
-    album_image: albumImage,
-    total_seconds: (duration || 0) * row.plays
-  };
+  return { album_image: cover };
 }
 
-async function getTopList(type, filter = {}, paging = {}, artist = null) {
+function needsEnrich(type, row) {
+  if (type === "artists") return !getCachedArtistImage(row.artist);
+  return !(getCachedAlbumCover(row.artist, row.album) || row.album_image);
+}
+
+// Network enrichment of a single row (background path).
+async function enrichRow(type, row) {
+  if (type === "artists") {
+    return { image: await ensureArtistImage(row.artist).catch(() => null) };
+  }
+  const albumImage = await ensureAlbumCover(row.artist, row.album).catch(() => null);
+  return { album_image: albumImage };
+}
+
+function rememberEnriched(type, row, enriched) {
+  if (!enriched) return;
+  if (type === "artists") {
+    if (enriched.image) rememberArtistImage(row.artist, enriched.image);
+    return;
+  }
+  if (enriched.album_image) rememberAlbumCover(row.artist, row.album, enriched.album_image);
+}
+
+// Two-phase: answer immediately with the SQL rows + cached images + LB urls,
+// and enrich the missing images/covers in the background (they land in the
+// persistent cache; the frontend polls with cachedOnly=1 to pick them up).
+// With cachedOnly=1 no background work is started.
+async function getTopList(type, filter = {}, paging = {}, artist = null, { cachedOnly = false } = {}) {
   const { limit, offset } = parsePaging(paging);
   const query = buildTopListQuery(type, filter, { limit, offset }, artist);
   if (!query) return null;
@@ -121,10 +142,22 @@ async function getTopList(type, filter = {}, paging = {}, artist = null) {
   const total = db.prepare(query.countSql).get(...query.countParams)?.total || 0;
   const rows = db.prepare(query.rowsSql).all(...query.rowsParams);
 
-  const items = await mapWithConcurrency(rows, EXTERNAL_REQUEST_CONCURRENCY, async row => ({
-    ...await enrichRow(type, row),
+  const items = rows.map(row => ({
+    ...row,
+    ...cachedEnrich(type, row),
     url: TYPES[type].url(row)
   }));
+
+  const missing = rows.filter(row => needsEnrich(type, row));
+  const enriching = missing.length > 0;
+
+  if (enriching && !cachedOnly) {
+    mapWithConcurrency(missing, LIST_CONCURRENCY, row => (
+      enrichRow(type, row)
+        .then(enriched => rememberEnriched(type, row, enriched))
+        .catch(() => {})
+    )).catch(() => {});
+  }
 
   return {
     type,
@@ -132,7 +165,8 @@ async function getTopList(type, filter = {}, paging = {}, artist = null) {
     total,
     offset,
     limit,
-    hasMore: offset + items.length < total
+    hasMore: offset + rows.length < total,
+    enriching
   };
 }
 
@@ -141,6 +175,7 @@ module.exports = {
   MAX_LIMIT,
   TYPES,
   buildTopListQuery,
+  cachedEnrich,
   getTopList,
   parsePaging
 };

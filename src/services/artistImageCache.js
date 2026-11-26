@@ -3,7 +3,7 @@ const { fetchArtistImage, fetchDeezerArtistImageById } = require("./deezerArtist
 const { findArtistCached, getArtistDetailsCached } = require("./musicbrainz");
 const { filePathUrl, findEntityIdByMbid, getEntityData } = require("./wikidata");
 const { getLocalArtistMbid } = require("../utils/artistMbid");
-const { deezerArtistIdFromRelations, wikidataEntityFromRelations } = require("../utils/mbRelations");
+const { deezerArtistIdFromRelations } = require("../utils/mbRelations");
 const { isUsableImageUrl, normalizeImageUrl } = require("../utils/imageUrl");
 
 const getCachedImage = db.prepare(`
@@ -54,20 +54,16 @@ function rememberArtistImage(artist, image) {
 
 // Resolution order when a MusicBrainz MBID is known (from the local listens,
 // else a MusicBrainz name search) — all exact, homonym-proof:
-//   1. Wikidata entity from the MB url-rel -> P18 image
+//   1. Wikidata entity via SPARQL P434 -> P18 image (no MB rate limit: tried
+//      first, it avoids the 1 req/s MusicBrainz queue on list pages)
 //   2. Deezer artist id from the MB url-rel -> artist picture
-//   3. Wikidata entity via SPARQL P434 -> P18 image
 // Fallback: the name-verified Deezer artist search.
 async function resolveArtistImage(artist) {
   const mbid = getLocalArtistMbid(artist)
     || (await findArtistCached(artist).catch(() => null))?.mbid;
 
   if (mbid) {
-    const details = await getArtistDetailsCached(mbid).catch(() => null);
-    const relations = details?.relations || [];
-
-    const entityId = wikidataEntityFromRelations(relations)
-      || await findEntityIdByMbid(mbid).catch(() => null);
+    const entityId = await findEntityIdByMbid(mbid).catch(() => null);
     if (entityId) {
       const entity = await getEntityData(entityId).catch(() => null);
       if (entity?.imageFile) {
@@ -76,7 +72,8 @@ async function resolveArtistImage(artist) {
       }
     }
 
-    const deezerId = deezerArtistIdFromRelations(relations);
+    const details = await getArtistDetailsCached(mbid).catch(() => null);
+    const deezerId = deezerArtistIdFromRelations(details?.relations);
     if (deezerId) {
       const url = await fetchDeezerArtistImageById(deezerId).catch(() => null);
       if (url && isUsableImageUrl(url)) return normalizeImageUrl(url);

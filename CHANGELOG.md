@@ -2,6 +2,17 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.2.1] - 2026-11-26 — fix pagination « Voir plus » + listes en réponse instantanée
+
+### Fixed
+- **`range=all` (pilule « Tout » des pages liste) renvoyait 400 « Filtre de période invalide »** : accepté comme no-filter explicite dans `getActiveFilter`.
+- **Pagination « Voir plus »** : bouton avec spinner et désactivé pendant le chargement (les double-clics abortaient la requête en vol) ; pages de 25 (au lieu de 50) ; réponse **two-phase** — les items sont servis immédiatement avec les images/pochettes déjà en cache + les URLs ListenBrainz, l'enrichissement des manquants tourne en arrière-plan (écrit dans le cache persistant), un flag `enriching` + un polling front en `cachedOnly=1` (instantané, sans réseau) récupère les images au fur et à mesure. Une page répond en ~0,3 s au lieu de dizaines de secondes.
+- **Image artiste : SPARQL Wikidata d'abord** (P434 → entité → P18) avant les relations MusicBrainz, pour ne pas passer par la file MB throttlée à 1 req/s sur les pages de liste.
+- Durée des morceaux lue depuis la colonne `scrobbles.track_duration` (pas de lookup).
+
+### Tests
+- 127/127 OK, `npm run check` OK. Vérifié en navigateur (Crest) contre la vraie base : `#list/artists?range=all` → 25 lignes en 1,4 s, clic « Voir plus » → 50 lignes en 1,2 s ; idem `#list/tracks?range=all`.
+
 ## [3.2.0] - 2026-11-26 — pages « Voir tout » pour tous les modules top
 
 ### Added

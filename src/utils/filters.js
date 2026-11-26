@@ -32,6 +32,9 @@ const getActiveFilter = (query = {}) => {
   const parsedMonth = parseMonth(query.month);
   const timezoneOffset = parseTimezoneOffset(query.tzOffset);
 
+  // "all" is accepted as an explicit no-filter (used by the list pages' "Tout" pill).
+  if (rawRange === "all") return { where: null, params: [] };
+
   if (rawRange) {
     if (!ALLOWED_RANGES.has(rawRange)) invalidFilter("Filtre de période invalide");
 

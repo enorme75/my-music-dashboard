@@ -10,7 +10,7 @@ import { showToast } from "./toast.js";
 // hash #list/{albums|artists|tracks}?range=day|week|month|year|all
 //                          or ?year=2026[&month=11]
 //                          or ?artist=<name> (top tracks of an artist page)
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 25;
 const RANGES = ["day", "week", "month", "year", "all"];
 const TYPE_TITLE_KEY = {
   albums: "common.topAlbums",
@@ -33,6 +33,8 @@ let total = 0;
 let hasMore = false;
 let loadCounter = 0;
 let abortController = null;
+let refreshTimer = null;
+let refreshCount = 0;
 
 export function parseListHash() {
   const match = /^#list\/(albums|artists|tracks)(?:\?(.*))?$/.exec(location.hash);
@@ -142,22 +144,48 @@ function renderPaging() {
   document.getElementById("list-empty")?.classList.toggle("d-none", Boolean(items.length));
 }
 
-async function loadListPage(offset, replace) {
-  const loadId = ++loadCounter;
-  abortController?.abort();
-  abortController = new AbortController();
-
+function buildQuery(offset, limit) {
   const { type, params } = current;
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (["range", "year", "month", "artist"].includes(key) && value) qs.set(key, value);
   }
   qs.set("tzOffset", String(new Date().getTimezoneOffset()));
-  qs.set("limit", String(PAGE_SIZE));
+  qs.set("limit", String(limit));
   qs.set("offset", String(offset));
+  return `/api/top-list?type=${type}&${qs.toString()}`;
+}
+
+// The server enriches missing images/covers in the background; poll a few
+// times in cachedOnly mode (instant, no network enrichment) to pick them up.
+function scheduleCacheRefresh() {
+  if (refreshTimer || refreshCount >= 5 || !current) return;
+  refreshTimer = setTimeout(async () => {
+    refreshTimer = null;
+    refreshCount += 1;
+    if (!current) return;
+    try {
+      const qs = new URLSearchParams(buildQuery(0, Math.max(items.length, PAGE_SIZE)).split("?")[1]);
+      qs.set("cachedOnly", "1");
+      const data = await fetchJSON(`/api/top-list?${qs.toString()}`, { cache: "no-store" });
+      if (Array.isArray(data.items) && data.items.length) {
+        items = data.items;
+        renderItems();
+      }
+      if (data.enriching && refreshCount < 5) scheduleCacheRefresh();
+    } catch {
+      // best effort only
+    }
+  }, 3500);
+}
+
+async function loadListPage(offset, replace) {
+  const loadId = ++loadCounter;
+  abortController?.abort();
+  abortController = new AbortController();
 
   try {
-    const data = await fetchJSON(`/api/top-list?type=${type}&${qs.toString()}`, {
+    const data = await fetchJSON(buildQuery(offset, PAGE_SIZE), {
       cache: "no-store",
       signal: abortController.signal
     });
@@ -170,6 +198,7 @@ async function loadListPage(offset, replace) {
 
     renderItems();
     renderPaging();
+    if (data.enriching) scheduleCacheRefresh();
   } catch (error) {
     if (error.name === "AbortError" || loadId !== loadCounter) return;
     console.error("Error loading top list:", error);
@@ -178,6 +207,11 @@ async function loadListPage(offset, replace) {
 }
 
 export async function loadList() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+  refreshCount = 0;
   const parsed = parseListHash() || { type: "artists", params: { range: "all" } };
   current = parsed;
   items = [];
@@ -222,9 +256,18 @@ function initListControls() {
     });
   });
 
-  document.getElementById("list-more")?.addEventListener("click", () => {
-    if (!current || !hasMore) return;
-    loadListPage(items.length, false);
+  const more = document.getElementById("list-more");
+  more?.addEventListener("click", () => {
+    if (!current || !hasMore || more.disabled) return;
+    // The server enriches each new row (Wikidata/Deezer lookups), which can
+    // take a while on the NAS: lock the button so double-clicks don't abort
+    // the in-flight request.
+    more.disabled = true;
+    more.innerHTML = `<i class="mdi mdi-loading mdi-spin"></i> ${t("common.loading")}`;
+    loadListPage(items.length, false).finally(() => {
+      more.disabled = false;
+      more.innerHTML = `<span data-i18n="list.more">${t("list.more")}</span>`;
+    });
   });
 }
 
