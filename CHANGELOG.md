@@ -2,6 +2,23 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.1.0] - 2026-11-26 — logo ListenBrainz + bios/visuels artistes résolus par MBID
+
+### Changed
+- **Pastilles « ListenBrainz » des pages artiste/album** : le logo Last.fm (simple-icons) était encore affiché alors que les liens pointent vers `listenbrainz.org/{artist,release}/{mbid}` — remplacé par le logo officiel ListenBrainz (MetaBrainz).
+
+### Fixed
+- **Bios d'artistes homonymes** : la bio était cherchée par nom Wikipedia seul (« Spectrum » → l'article sur le spectre physique, « Phoenix » → la page de désambiguation). Quand un MBID MusicBrainz est connu (colonne `artist_mbid` des listens locaux, sinon recherche MB), la bio est désormais résolue via les relations du MBID : relation Wikipedia directe, entité Wikidata (sitelinks de la langue), ou à défaut recherche Wikipedia guidée par la disambiguation MB (« Spectrum (UK band) » → Peter Kember / Sonic Boom). Le fallback par nom est renforcé : l'article exact n'est retenu que si son intro parle de musique, les pages « may refer to » sont exclues, et les hits de recherche doivent commencer par le nom de l'artiste (« River Phoenix » ne matche plus « Phoenix »).
+- **Visuels d'artistes homonymes** : résolution par MBID d'abord — image P18 de l'entité Wikidata liée (via la relation MB `wikidata`, sinon SPARQL `P434`), ou artiste Deezer exact via la relation MB `deezer.com/artist/<id>` — avant le fallback recherche Deezer vérifiée par nom. Le hash « image vide » de Deezer (`d41d8cd9…`) est désormais rejeté.
+
+### Added
+- `src/services/wikidata.js` (MBID → entité Wikidata via SPARQL `wdt:P434`, claims P18, sitelinks), `src/utils/mbRelations.js` (extraction deezer/wikidata des url-rels MB), `src/utils/wikiLinks.js` (relation Wikipedia → titre d'article), `src/utils/artistMbid.js` (MBID local depuis `scrobbles`). `findArtistCached` / `getArtistDetailsCached` : cache TTL 5 min partagé entre bio et image pour ne pas surcharger MusicBrainz (1 req/s).
+- `scripts/verify-images.js` : la re-vérification des artistes suit la même chaîne MBID (Wikidata/Deezer-relation > recherche Deezer vérifiée) ; `--only-artist` / `--only-album` impliquent désormais leur scope (ils fuyaient dans l'autre scope).
+- Hôtes `*.wikimedia.org` (commons + upload) autorisés dans le proxy d'images, serveur et front.
+
+### Tests
+- 20 nouveaux tests (`test/wikiLinks.test.js`, `test/wikidata.test.js`, `test/mbRelations.test.js`, `test/wikipedia.test.js`) : 120/120 OK, `npm run check` OK (114 fichiers). Vérifié en live contre MB/Wikidata/Wikipedia : Spectrum → bio Peter Kember/Sonic Boom, Phoenix → bio « French rock band » + photo du groupe (P18), Nick Drake → inchangé correct.
+
 ## [3.0.0] - 2026-11-26 — renommage en « My Music Dashboard »
 
 ### Changed

@@ -19,9 +19,13 @@
 //
 // Scope: only Deezer-sourced URLs (dzcdn.net) are re-checked — they are the
 // unverified ones. Legacy last.fm URLs (source-verified by the Last.fm API at
-// the time) and manual uploads (/covers/albums/...) are never touched.
+// the time), manual uploads (/covers/albums/...) and already MBID-verified
+// Wikimedia URLs are never touched.
 // Nothing is ever set to null: an entry is only replaced when a verified
-// candidate exists and differs from the cached one.
+// candidate exists and differs from the cached one. Artist verification uses
+// the same trust order as the runtime: Wikidata image via the artist MBID
+// (local listens first, then MusicBrainz), then the name-verified Deezer
+// picture.
 
 require("dotenv").config();
 
@@ -29,21 +33,22 @@ const db = require("../src/db");
 const { ARTIST_COLUMN } = require("../src/utils/artistName");
 const { mapWithConcurrency } = require("../src/utils/mapWithConcurrency");
 const { imageIdentity } = require("../src/utils/matchCandidates");
-const { fetchArtistImage } = require("../src/services/deezerArtistImage");
 const { getDeezerAlbumImage } = require("../src/services/deezer-album");
 const { getAlbumImage } = require("../src/services/albumMetadata");
-const { rememberArtistImage } = require("../src/services/artistImageCache");
+const { rememberArtistImage, resolveArtistImage } = require("../src/services/artistImageCache");
 const { rememberAlbumCover } = require("../src/services/albumCoverCache");
 const { invalidateDashboardCache } = require("../src/services/dashboardCache");
 
 const args = process.argv.slice(2);
 const APPLY = args.includes("--apply");
-const ONLY_ARTISTS = args.includes("--artists");
-const ONLY_ALBUMS = args.includes("--albums");
 const LIMIT = Number(argsValue("--limit") || 0) || null;
 const ONLY_ARTIST = argsValue("--only-artist");
 const ONLY_ALBUM_ARTIST = argsValue("--only-album");
 const ONLY_ALBUM_NAME = argsValue("--only-album-name");
+// --only-artist/--only-album imply their scope (they used to leak into the
+// other scope and re-check everything).
+const ONLY_ARTISTS = args.includes("--artists") || Boolean(ONLY_ARTIST);
+const ONLY_ALBUMS = args.includes("--albums") || (Boolean(ONLY_ALBUM_ARTIST) && Boolean(ONLY_ALBUM_NAME));
 
 const CONCURRENCY = 3;
 const PACING_MS = 120;
@@ -90,7 +95,9 @@ async function verifyArtists() {
 
     let verified;
     try {
-      verified = await fetchArtistImage(row.artist);
+      // Same trust order as the runtime: Wikidata image via the local/MB
+      // artist MBID first, name-verified Deezer picture as fallback.
+      verified = await resolveArtistImage(row.artist);
     } catch {
       verified = null;
     }

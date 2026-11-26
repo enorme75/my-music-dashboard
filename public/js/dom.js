@@ -14,7 +14,8 @@ const HTTPS_IMAGE_HOSTS = [
   /(^|\.)dzcdn\.net$/i,
   /(^|\.)deezer\.com$/i,
   /(^|\.)coverartarchive\.org$/i,
-  /(^|\.)archive\.org$/i
+  /(^|\.)archive\.org$/i,
+  /(^|\.)wikimedia\.org$/i
 ];
 
 export function escapeHTML(value) {

@@ -15,7 +15,9 @@ const HTTPS_IMAGE_HOSTS = new Set([
   "cdn-images.dzcdn.net",
   "e-cdns-images.dzcdn.net",
   "coverartarchive.org",
-  "archive.org"
+  "archive.org",
+  "commons.wikimedia.org",
+  "upload.wikimedia.org"
 ]);
 
 // Host patterns allowed for remote images fetched through /api/image-proxy.
@@ -29,7 +31,8 @@ const REMOTE_IMAGE_HOST_PATTERNS = [
   /(^|\.)dzcdn\.net$/i,
   /(^|\.)deezer\.com$/i,
   /(^|\.)coverartarchive\.org$/i,
-  /(^|\.)archive\.org$/i
+  /(^|\.)archive\.org$/i,
+  /(^|\.)wikimedia\.org$/i
 ];
 
 function normalizeImageUrl(value) {

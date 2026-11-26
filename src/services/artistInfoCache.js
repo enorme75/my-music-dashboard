@@ -1,7 +1,11 @@
 const db = require("../db");
-const { findArtist, getArtistDetails } = require("./musicbrainz");
-const { getArtistBio } = require("./wikipedia");
+const { findArtistCached, getArtistDetailsCached } = require("./musicbrainz");
+const { getArtistBio, getExtract } = require("./wikipedia");
+const { getEntityData, findEntityIdByMbid, wikipediaTitleFromEntity } = require("./wikidata");
 const { getArtistUrl } = require("../utils/listenbrainzUrl");
+const { getLocalArtistMbid } = require("../utils/artistMbid");
+const { pickWikipediaTitle } = require("../utils/wikiLinks");
+const { wikidataEntityFromRelations } = require("../utils/mbRelations");
 const { sanitizeError } = require("../utils/sanitizeAxios");
 
 const BIO_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -56,30 +60,62 @@ function getCachedArtistInfo(artist, lang) {
   };
 }
 
-// Artist bio + ListenBrainz artist page: the MBID comes from MusicBrainz, the
-// bio text from Wikipedia in the requested language (MusicBrainz annotations
-// are kept as a last-resort fallback), and the public page URL from
-// ListenBrainz. The UI already handles a null bio.
+// Artist bio + ListenBrainz artist page. The MBID comes from the local listens
+// when available (ground truth, no homonym risk), otherwise from a MusicBrainz
+// name search. When a MBID is known, the bio is resolved through the artist's
+// own Wikipedia url-relation (exact article, e.g. "Spectrum (band)" instead of
+// the "Spectrum" disambiguation page); the name-based Wikipedia search and the
+// MusicBrainz annotation remain as fallbacks. The public page URL is ListenBrainz.
+// The UI already handles a null bio.
 async function fetchArtistInfo(artist, lang) {
-  const match = await findArtist(artist);
+  let mbid = getLocalArtistMbid(artist);
+  let canonicalName = artist;
 
-  let bio = await getArtistBio(lang, match?.name || artist);
-  let listenbrainzUrl = match?.mbid
-    ? getArtistUrl(match.name || artist, match.mbid)
-    : null;
-
-  if (!bio && match?.mbid) {
-    const details = await getArtistDetails(match.mbid);
-    bio = stripHtml(details?.annotation) || null;
+  let disambiguation = null;
+  if (!mbid) {
+    const match = await findArtistCached(artist).catch(() => null);
+    if (match?.mbid) {
+      mbid = match.mbid;
+      canonicalName = match.name || artist;
+      disambiguation = match.disambiguation || null;
+    }
   }
 
-  if (!match?.mbid) return { bio, listenbrainzUrl: null, image: null };
+  let bio = null;
+  const listenbrainzUrl = mbid ? getArtistUrl(canonicalName, mbid) : null;
 
-  return {
-    bio,
-    listenbrainzUrl,
-    image: null
-  };
+  if (mbid) {
+    const details = await getArtistDetailsCached(mbid).catch(() => null);
+    disambiguation = details?.disambiguation || disambiguation;
+
+    // 1. the artist's own Wikipedia url-relation on MusicBrainz
+    let wikiTitle = pickWikipediaTitle(details?.relations, lang);
+
+    // 2. the Wikidata entity linked to the MBID (url-rel, else SPARQL P434):
+    //    its sitelinks give the exact Wikipedia article in the wanted language
+    if (!wikiTitle) {
+      const entityId = wikidataEntityFromRelations(details?.relations)
+        || await findEntityIdByMbid(mbid).catch(() => null);
+      if (entityId) {
+        const entity = await getEntityData(entityId).catch(() => null);
+        wikiTitle = wikipediaTitleFromEntity(entity, lang);
+      }
+    }
+
+    if (wikiTitle) {
+      bio = await getExtract(lang, wikiTitle).catch(() => null);
+    }
+    if (!bio) {
+      bio = await getArtistBio(lang, canonicalName, { disambiguation });
+    }
+    if (!bio) {
+      bio = stripHtml(details?.annotation) || null;
+    }
+  } else {
+    bio = await getArtistBio(lang, canonicalName, { disambiguation });
+  }
+
+  return { bio, listenbrainzUrl, image: null };
 }
 
 async function ensureArtistInfo(artist, lang = "en") {

@@ -10,6 +10,7 @@ const {
   pickMbRecording,
   pickMbReleaseGroup
 } = require("../utils/matchCandidates");
+const { createTtlCache } = require("../utils/ttlCache");
 
 // MusicBrainz requires a descriptive User-Agent and at most 1 request/second,
 // so every call goes through a serialized queue with a minimum spacing.
@@ -64,7 +65,21 @@ async function findArtist(artist) {
   const match = pickMbArtist(artists, name);
 
   if (!match?.item?.id) return null;
-  return { mbid: match.item.id, name: match.item.name || name };
+  return {
+    mbid: match.item.id,
+    name: match.item.name || name,
+    disambiguation: match.item.disambiguation || null
+  };
+}
+
+// findArtist is shared by the bio and image lookups; cache it briefly so the
+// two do not double the (rate-limited) MusicBrainz traffic.
+const findArtistCache = createTtlCache();
+
+async function findArtistCached(artist) {
+  const name = String(artist || "").trim();
+  if (!name) return null;
+  return findArtistCache.get(name.toLocaleLowerCase(), 5 * 60 * 1000, () => findArtist(name));
 }
 
 async function getArtistDetails(mbid) {
@@ -73,8 +88,20 @@ async function getArtistDetails(mbid) {
   return {
     mbid: data?.id || mbid,
     name: data?.name || null,
-    annotation: data?.annotation || null
+    disambiguation: data?.disambiguation || null,
+    annotation: data?.annotation || null,
+    relations: Array.isArray(data?.relations) ? data.relations : []
   };
+}
+
+// Shared by the bio and image lookups so the (rate-limited) MusicBrainz call
+// happens once per MBID per few minutes.
+const artistDetailsCache = createTtlCache();
+
+async function getArtistDetailsCached(mbid) {
+  const id = String(mbid || "").trim();
+  if (!id) return null;
+  return artistDetailsCache.get(id, 5 * 60 * 1000, () => getArtistDetails(id));
 }
 
 async function findReleaseGroup(artist, album) {
@@ -167,9 +194,11 @@ async function findRecording(artist, track) {
 
 module.exports = {
   findArtist,
+  findArtistCached,
   findRecording,
   findReleaseGroup,
   getArtistDetails,
+  getArtistDetailsCached,
   getReleaseGroupTracks,
   mbGet
 };

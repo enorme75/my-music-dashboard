@@ -1,5 +1,9 @@
 const db = require("../db");
-const { fetchArtistImage } = require("./deezerArtistImage");
+const { fetchArtistImage, fetchDeezerArtistImageById } = require("./deezerArtistImage");
+const { findArtistCached, getArtistDetailsCached } = require("./musicbrainz");
+const { filePathUrl, findEntityIdByMbid, getEntityData } = require("./wikidata");
+const { getLocalArtistMbid } = require("../utils/artistMbid");
+const { deezerArtistIdFromRelations, wikidataEntityFromRelations } = require("../utils/mbRelations");
 const { isUsableImageUrl, normalizeImageUrl } = require("../utils/imageUrl");
 
 const getCachedImage = db.prepare(`
@@ -48,6 +52,40 @@ function rememberArtistImage(artist, image) {
   return normalized;
 }
 
+// Resolution order when a MusicBrainz MBID is known (from the local listens,
+// else a MusicBrainz name search) — all exact, homonym-proof:
+//   1. Wikidata entity from the MB url-rel -> P18 image
+//   2. Deezer artist id from the MB url-rel -> artist picture
+//   3. Wikidata entity via SPARQL P434 -> P18 image
+// Fallback: the name-verified Deezer artist search.
+async function resolveArtistImage(artist) {
+  const mbid = getLocalArtistMbid(artist)
+    || (await findArtistCached(artist).catch(() => null))?.mbid;
+
+  if (mbid) {
+    const details = await getArtistDetailsCached(mbid).catch(() => null);
+    const relations = details?.relations || [];
+
+    const entityId = wikidataEntityFromRelations(relations)
+      || await findEntityIdByMbid(mbid).catch(() => null);
+    if (entityId) {
+      const entity = await getEntityData(entityId).catch(() => null);
+      if (entity?.imageFile) {
+        const url = filePathUrl(entity.imageFile, 1000);
+        if (isUsableImageUrl(url)) return normalizeImageUrl(url);
+      }
+    }
+
+    const deezerId = deezerArtistIdFromRelations(relations);
+    if (deezerId) {
+      const url = await fetchDeezerArtistImageById(deezerId).catch(() => null);
+      if (url && isUsableImageUrl(url)) return normalizeImageUrl(url);
+    }
+  }
+
+  return fetchArtistImage(artist);
+}
+
 async function ensureArtistImage(artist) {
   if (!artist) return null;
 
@@ -59,7 +97,7 @@ async function ensureArtistImage(artist) {
   const key = String(artist).toLocaleLowerCase();
   if (inFlight.has(key)) return inFlight.get(key);
 
-  const request = fetchArtistImage(artist)
+  const request = resolveArtistImage(artist)
     .then(image => {
       const saved = rememberArtistImage(artist, image);
       if (!saved) saveCachedImage(artist, null, Date.now());
@@ -71,4 +109,4 @@ async function ensureArtistImage(artist) {
   return request;
 }
 
-module.exports = { ensureArtistImage, getCachedArtistImage, rememberArtistImage };
+module.exports = { ensureArtistImage, getCachedArtistImage, rememberArtistImage, resolveArtistImage };
