@@ -2,6 +2,18 @@
 
 All notable changes to YourLastFM are documented in this file.
 
+## [2.2.0] - 2026-11-26 — vérification par nom des visuels artiste/album
+
+### Fixed
+- **Visuels d'artistes et de pochettes mal attribués** : les lookups d'images prenaient le premier hit d'une recherche fuzzy sans vérifier le nom — image de « Nicked Drake » affichée pour Nick Drake, pochette d'un autre album (voire d'un autre artiste) pour un album (ex. « Runt » de Todd Rundgren recevait la pochette de « The Complete Bearsville Album Collection »), et fallback aveugle sur le premier résultat côté MusicBrainz. Désormais chaque candidat est scoré par nom (`scoreMatch` : 3 = exact, 2 = mots entiers communs, 0 = rejet — « nicked drake » ne matche plus « nick drake ») : recherches Deezer artiste/album/titre (l'artiste ET le titre doivent matcher, `limit: 10`, requête quotée en secours) et MusicBrainz `findArtist` / `findReleaseGroup` / `findRecording` (artist-credit + titre vérifiés, plus de fallback `results[0]`). Scan de la base réelle : 28 images d'artistes sur 268 en cache pointaient vers le mauvais artiste.
+
+### Added
+- **`scripts/verify-images.js`** : audit/réparation des images déjà en cache (`node scripts/verify-images.js` en dry-run, `--apply` pour écrire, filtres `--artists` / `--albums` / `--limit` / `--only-artist` / `--only-album` + `--only-album-name`). Ne re-vérifie que les URLs Deezer (les seules non vérifiées à l'origine), ne touche jamais aux uploads manuels (`/covers/albums/…`) ni aux anciennes URLs last.fm, et ne met jamais une image à null : une entrée n'est remplacée que si un candidat vérifié existe et diffère. Ordre de confiance pour les pochettes : Cover Art Archive via le `release_mbid` stocké > release-group MusicBrainz > Deezer vérifié. `--apply` invalide le cache dashboard. Exécution sur la base réelle : 28 artistes corrigés, 1 pochette corrigée, 17 pochettes basculées vers Cover Art Archive.
+- Cache des pochettes : quand plusieurs images sont stockées pour un même album, c'est désormais la plus fréquente qui est servie (au lieu d'un ordre arbitraire).
+
+### Tests
+- 12 nouveaux tests (`test/matchCandidates.test.js` + `scoreMatch` dans `test/normalizeText.test.js`) : 100/100 tests OK, `npm run check` OK (106 fichiers).
+
 ## [2.1.0] - 2026-11-25 — regroupement des scrobbles par artiste principal
 
 ### Added
