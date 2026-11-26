@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to YourLastFM are documented in this file.
+All notable changes to My Music Dashboard are documented in this file.
 
 ## [2.2.0] - 2026-11-26 — vérification par nom des visuels artiste/album
 

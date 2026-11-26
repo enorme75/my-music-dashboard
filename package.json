@@ -1,5 +1,5 @@
 {
-  "name": "your_lastfm",
+  "name": "my-music-dashboard",
   "version": "2.2.0",
   "description": "Self-hosted ListenBrainz listen dashboard, sync service and recap generator (SQLite)",
   "main": "src/api.js",

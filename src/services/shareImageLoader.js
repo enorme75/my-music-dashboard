@@ -4,6 +4,7 @@ const fs = require("fs/promises");
 const path = require("path");
 const { loadImage } = require("canvas");
 
+const { version: APP_VERSION } = require("../../package.json");
 const db = require("../db");
 const { fetchWithRetry } = require("../utils/fetchRetry");
 
@@ -88,7 +89,7 @@ async function downloadRemoteImage(source, ignoreCache = false) {
       maxContentLength: maxImageBytes,
       maxBodyLength: maxImageBytes,
       headers: {
-        "User-Agent": "YourLastFM/1.0 share-image-generator",
+        "User-Agent": `my-music-dashboard/${APP_VERSION} share-image-generator`,
         Accept: "image/*"
       }
     }),

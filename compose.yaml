@@ -1,8 +1,8 @@
 services:
   app:
-    image: ghcr.io/enorme75/your-lastfm:${YOUR_LASTFM_VERSION:-latest}
+    image: ghcr.io/enorme75/my-music-dashboard:${MMD_VERSION:-latest}
     build: .
-    container_name: your_lastfm
+    container_name: my-music-dashboard
     env_file:
       - .env
     volumes:

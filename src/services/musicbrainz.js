@@ -16,7 +16,7 @@ const {
 const MB_URL = String(process.env.MUSICBRAINZ_API_URL || "https://musicbrainz.org/ws/2").replace(/\/+$/, "");
 const USER_AGENT = String(
   process.env.MUSICBRAINZ_USER_AGENT
-    || `your_lastfm/${APP_VERSION} (+https://github.com/Gomaink/your_lastfm)`
+    || `my-music-dashboard/${APP_VERSION} (+https://github.com/enorme75/my-music-dashboard)`
 );
 const REQUEST_TIMEOUT = Math.max(1000, Number(process.env.IMAGE_REQUEST_TIMEOUT_MS || 10000));
 const MIN_REQUEST_SPACING_MS = Math.max(0, Number(process.env.MUSICBRAINZ_REQUEST_DELAY_MS || 1100));

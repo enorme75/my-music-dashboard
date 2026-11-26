@@ -15,7 +15,7 @@ const MAX_LISTENS_PER_REQUEST = Math.min(
 );
 const USER_AGENT = String(
   process.env.LISTENBRAINZ_USER_AGENT
-    || `your_lastfm/${APP_VERSION} (+https://github.com/Gomaink/your_lastfm)`
+    || `my-music-dashboard/${APP_VERSION} (+https://github.com/enorme75/my-music-dashboard)`
 );
 
 const STAT_ENTITIES = new Set(["artists", "releases", "recordings"]);

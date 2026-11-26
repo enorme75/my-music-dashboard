@@ -169,16 +169,16 @@ const DICTIONARY = {
     clearPeriod: { fr: "Récents", en: "Recent" },
     periodCount: { fr: "· {count} écoutes", en: "· {count} plays" },
     deleteLocalConfirm: {
-      fr: "Supprimer ce scrobble de la base locale (stats your_lastfm) ?",
-      en: "Remove this scrobble from the local database (your_lastfm stats)?"
+      fr: "Supprimer ce scrobble de la base locale (stats my-music-dashboard) ?",
+      en: "Remove this scrobble from the local database (my-music-dashboard stats)?"
     },
     deleteLocal: {
       fr: "Supprimer de la base locale",
       en: "Remove from local database"
     },
     deleteConfirm: {
-      fr: "Supprimer aussi ce scrobble de la base locale (stats your_lastfm) ?",
-      en: "Also remove this scrobble from the local database (your_lastfm stats)?"
+      fr: "Supprimer aussi ce scrobble de la base locale (stats my-music-dashboard) ?",
+      en: "Also remove this scrobble from the local database (my-music-dashboard stats)?"
     },
     deleteFailed: {
       fr: "Impossible de supprimer le scrobble localement : {message}",
@@ -329,8 +329,8 @@ const DICTIONARY = {
   },
   errors: {
     connection: {
-      fr: "Impossible de se connecter à YourLastFM. Vérifiez que le serveur fonctionne encore.",
-      en: "Could not connect to YourLastFM. Check whether the server is still running."
+      fr: "Impossible de se connecter à My Music Dashboard. Vérifiez que le serveur fonctionne encore.",
+      en: "Could not connect to My Music Dashboard. Check whether the server is still running."
     }
   },
   artist: {

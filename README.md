@@ -1,6 +1,6 @@
-# YourLastFM
+# My Music Dashboard
 
-YourLastFM is a self-hosted Node.js dashboard that synchronizes your ListenBrainz listens into SQLite, displays listening statistics, compares your taste with friends, builds custom group leaderboards, and generates shareable recap images.
+My Music Dashboard is a self-hosted Node.js dashboard that synchronizes your ListenBrainz listens into SQLite, displays listening statistics, compares your taste with friends, builds custom group leaderboards, and generates shareable recap images. It is a personal fork of [Gomaink/your_lastfm](https://github.com/Gomaink/your_lastfm).
 
 ## Features
 
@@ -164,7 +164,7 @@ Each group supports:
 - artist and album drill-downs for the group's most-played tracks;
 - direct links to the corresponding ListenBrainz pages.
 
-Groups and their caches are stored locally in `stats.db`; no separate account system or external YourLastFM service is involved. Because ListenBrainz statistics only expose fixed ranges, arbitrary date ranges are computed by aggregating the members' raw listens for the window; requests are concurrency-limited, retried, and cached. If one member temporarily fails, the remaining data is still displayed as a partial result. Use **Refresh** to bypass the current chart cache.
+Groups and their caches are stored locally in `stats.db`; no separate account system or external My Music Dashboard service is involved. Because ListenBrainz statistics only expose fixed ranges, arbitrary date ranges are computed by aggregating the members' raw listens for the window; requests are concurrency-limited, retried, and cached. If one member temporarily fails, the remaining data is still displayed as a partial result. Use **Refresh** to bypass the current chart cache.
 
 ## Data and backups
 

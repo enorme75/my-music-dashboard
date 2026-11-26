@@ -6,7 +6,7 @@ const { fetchWithRetry } = require("../utils/fetchRetry");
 // fonctionnent mais avec un rate limit plus bas (25 req/min par IP).
 const DISCOGS_API_URL = "https://api.discogs.com";
 const DISCOGS_SITE_URL = "https://www.discogs.com";
-const DISCOGS_USER_AGENT = "your_lastfm/1.0 (personal self-hosted fork)";
+const DISCOGS_USER_AGENT = "my-music-dashboard/1.0 (personal self-hosted fork)";
 const REQUEST_TIMEOUT = Number(process.env.IMAGE_REQUEST_TIMEOUT_MS || 10000);
 const LINK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = Math.max(

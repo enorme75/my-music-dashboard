@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const fs = require("fs/promises");
 const path = require("path");
 
+const { version: APP_VERSION } = require("../../package.json");
 const db = require("../db");
 const { fetchWithRetry } = require("../utils/fetchRetry");
 const { isAllowedRemoteImageHost, normalizeImageUrl } = require("../utils/imageUrl");
@@ -154,7 +155,7 @@ async function downloadRemoteImage(source) {
       maxRedirects: 3,
       beforeRedirect: validateRedirect,
       headers: {
-        "User-Agent": "YourLastFM/1.0 image-cache",
+        "User-Agent": `my-music-dashboard/${APP_VERSION} image-cache`,
         Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
       }
     }),

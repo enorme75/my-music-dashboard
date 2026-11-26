@@ -7,7 +7,7 @@ const { fetchWithRetry } = require("../utils/fetchRetry");
 
 const USER_AGENT = String(
   process.env.WIKIPEDIA_USER_AGENT
-    || `your_lastfm/${APP_VERSION} (+https://github.com/Gomaink/your_lastfm)`
+    || `my-music-dashboard/${APP_VERSION} (+https://github.com/enorme75/my-music-dashboard)`
 );
 const REQUEST_TIMEOUT = Math.max(1000, Number(process.env.IMAGE_REQUEST_TIMEOUT_MS || 10000));
 

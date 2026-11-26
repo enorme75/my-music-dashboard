@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const axios = require("axios");
+const { version: APP_VERSION } = require("../../package.json");
 
 const { fetchWithRetry } = require("../utils/fetchRetry");
 const { ARTIST_COLUMN } = require("../utils/artistName");
@@ -25,7 +26,7 @@ async function probeCoverUrl(url) {
       const result = await axios.head(url, {
         timeout: REQUEST_TIMEOUT,
         maxRedirects: 5,
-        headers: { "User-Agent": "your_lastfm/1.9.0 (+https://github.com/Gomaink/your_lastfm)" },
+        headers: { "User-Agent": `my-music-dashboard/${APP_VERSION} (+https://github.com/enorme75/my-music-dashboard)` },
         validateStatus: status => status >= 200 && status < 400
       });
       if (result.status >= 400) {
