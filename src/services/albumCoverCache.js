@@ -5,12 +5,14 @@ const db = require("../db");
 const { ARTIST_COLUMN } = require("../utils/artistName");
 
 const getCachedCovers = db.prepare(`
-  SELECT DISTINCT album_image
+  SELECT album_image, COUNT(*) AS plays
   FROM scrobbles
   WHERE (${ARTIST_COLUMN} = ? COLLATE NOCASE OR artist = ? COLLATE NOCASE)
     AND album = ? COLLATE NOCASE
     AND album_image IS NOT NULL
     AND TRIM(album_image) != ''
+  GROUP BY album_image
+  ORDER BY plays DESC
 `);
 
 const updateCachedCover = db.prepare(`

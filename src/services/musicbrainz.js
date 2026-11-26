@@ -4,7 +4,12 @@ const axios = require("axios");
 
 const { version: APP_VERSION } = require("../../package.json");
 const { fetchWithRetry } = require("../utils/fetchRetry");
-const { normalize, isReasonableMatch } = require("../utils/normalizeText");
+const {
+  artistCreditNameOf,
+  pickMbArtist,
+  pickMbRecording,
+  pickMbReleaseGroup
+} = require("../utils/matchCandidates");
 
 // MusicBrainz requires a descriptive User-Agent and at most 1 request/second,
 // so every call goes through a serialized queue with a minimum spacing.
@@ -49,28 +54,17 @@ function quotedField(field, value) {
   return `${field}:"${escapeLucene(value)}"`;
 }
 
-function artistCreditName(release) {
-  const credit = release?.["artist-credit"];
-  if (!Array.isArray(credit)) return "";
-  return credit
-    .map(part => `${part?.name || ""}${part?.joinphrase || ""}`)
-    .join("")
-    .trim();
-}
-
 async function findArtist(artist) {
   const name = String(artist || "").trim();
   if (!name) return null;
 
-  const data = await mbGet("/artist/", { query: quotedField("artist", name), limit: 5 });
+  const data = await mbGet("/artist/", { query: quotedField("artist", name), limit: 10 });
   const artists = Array.isArray(data?.artists) ? data.artists : [];
-  const wanted = normalize(name);
-  const match = artists.find(item => normalize(item?.name) === wanted)
-    || artists.find(item => isReasonableMatch(normalize(item?.name), wanted))
-    || artists[0];
+  // No blind first-hit fallback: only a name-verified match is accepted.
+  const match = pickMbArtist(artists, name);
 
-  if (!match?.id) return null;
-  return { mbid: match.id, name: match.name || name };
+  if (!match?.item?.id) return null;
+  return { mbid: match.item.id, name: match.item.name || name };
 }
 
 async function getArtistDetails(mbid) {
@@ -89,20 +83,19 @@ async function findReleaseGroup(artist, album) {
   if (!artistName || !albumName) return null;
 
   const query = `${quotedField("artist", artistName)} AND ${quotedField("releasegroup", albumName)}`;
-  const data = await mbGet("/release-group/", { query, limit: 5 });
+  const data = await mbGet("/release-group/", { query, limit: 10 });
   const groups = Array.isArray(data?.["release-groups"]) ? data["release-groups"] : [];
-  const wanted = normalize(albumName);
+  // Verified pick: artist-credit must match and the title must match; no
+  // blind first-hit fallback (it produced covers of the wrong album).
+  const match = pickMbReleaseGroup(groups, artistName, albumName);
 
-  const match = groups.find(group => normalize(group?.title) === wanted)
-    || groups.find(group => isReasonableMatch(normalize(group?.title), wanted))
-    || groups[0];
-
-  if (!match?.id) return null;
+  if (!match?.item?.id) return null;
+  const group = match.item;
   return {
-    mbid: match.id,
-    title: match.title || albumName,
-    primaryType: match["primary-type"] || null,
-    firstReleaseDate: match["first-release-date"] || null
+    mbid: group.id,
+    title: group.title || albumName,
+    primaryType: group["primary-type"] || null,
+    firstReleaseDate: group["first-release-date"] || null
   };
 }
 
@@ -120,7 +113,7 @@ async function getReleaseGroupTracks(releaseGroupMbid) {
   const tracks = [];
 
   for (const release of releases) {
-    const releaseArtist = artistCreditName(release);
+    const releaseArtist = artistCreditNameOf(release);
     const media = Array.isArray(release?.media) ? release.media : [];
 
     for (const medium of media) {
@@ -152,22 +145,20 @@ async function findRecording(artist, track) {
   if (!artistName || !trackName) return null;
 
   const query = `${quotedField("recording", trackName)} AND ${quotedField("artist", artistName)}`;
-  const data = await mbGet("/recording/", { query, inc: "releases", limit: 5 });
+  const data = await mbGet("/recording/", { query, inc: "releases", limit: 10 });
   const recordings = Array.isArray(data?.recordings) ? data.recordings : [];
-  const wanted = normalize(trackName);
+  // Verified pick on artist-credit + title, no blind first-hit fallback.
+  const match = pickMbRecording(recordings, artistName, trackName);
 
-  const match = recordings.find(item => normalize(item?.title) === wanted)
-    || recordings.find(item => isReasonableMatch(normalize(item?.title), wanted))
-    || recordings[0];
+  if (!match?.item?.id) return null;
+  const recording = match.item;
 
-  if (!match?.id) return null;
-
-  const release = Array.isArray(match?.releases) ? match.releases[0] : null;
-  const lengthMs = Number(match?.length || 0);
+  const release = Array.isArray(recording?.releases) ? recording.releases[0] : null;
+  const lengthMs = Number(recording?.length || 0);
 
   return {
-    mbid: match.id,
-    title: match.title || trackName,
+    mbid: recording.id,
+    title: recording.title || trackName,
     duration: lengthMs > 0 ? Math.round(lengthMs / 1000) : null,
     releaseMbid: release?.id || null,
     releaseTitle: release?.title || null
