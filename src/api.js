@@ -33,6 +33,7 @@ const { ensureArtistImage } = require("./services/artistImageCache");
 const { importScrobbleCSV } = require("./services/importScrobbleCSV");
 const { exportScrobbleCSV } = require("./services/exportScrobbleCSV");
 const { ensureTrackDuration } = require("./services/trackDurationCache");
+const { getTopList, TYPES: TOP_LIST_TYPES } = require("./services/topLists");
 const { getListenBrainzUserInfo } = require("./services/listenbrainz-user");
 const { getRemoteImage } = require("./services/remoteImageCache");
 const { getFriendsList, compareWithFriend } = require("./services/listenbrainz-friends");
@@ -457,6 +458,26 @@ app.get("/api/top-albums", asyncRoute(async (req, res) => {
     ...album,
     album_image: await ensureAlbumCover(album.artist, album.album)
   }));
+
+  res.json(result);
+}));
+
+app.get("/api/top-list", asyncRoute(async (req, res) => {
+  setNoStore(res);
+  const type = String(req.query.type || "").trim();
+  if (!TOP_LIST_TYPES[type]) {
+    return res.status(400).json({
+      error: "invalid_type",
+      message: `Type de liste invalide (${Object.keys(TOP_LIST_TYPES).join(", ")})`
+    });
+  }
+
+  const filter = getActiveFilter(req.query);
+  const artist = String(req.query.artist || "").trim() || null;
+  const result = await getTopList(type, filter, {
+    limit: req.query.limit,
+    offset: req.query.offset
+  }, artist);
 
   res.json(result);
 }));

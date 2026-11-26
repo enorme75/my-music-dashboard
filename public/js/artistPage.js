@@ -53,6 +53,11 @@ function renderTopTracks(data) {
   const container = document.getElementById("artist-top-tracks");
   if (!container) return;
 
+  const seeAll = document.getElementById("artist-tracks-see-all");
+  if (seeAll && data.artist) {
+    seeAll.href = `#list/tracks?artist=${encodeURIComponent(data.artist)}`;
+  }
+
   container.innerHTML = (data.topTracks || []).map((row, index) => `
     <div class="top-row" data-track-artist="${escapeAttribute(data.artist)}" data-track-name="${escapeAttribute(row.track)}">
       <span class="rank">${index + 1}</span>

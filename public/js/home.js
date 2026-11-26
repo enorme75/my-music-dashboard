@@ -51,6 +51,8 @@ const MODULES = {
   }
 };
 
+const LIST_TYPE_BY_MODULE = { albums: "albums", artists: "artists", songs: "tracks" };
+
 const activePills = { albums: DEFAULT_PILL, artists: DEFAULT_PILL, songs: DEFAULT_PILL };
 const loadCounters = { albums: 0, artists: 0, songs: 0 };
 const abortControllers = {};
@@ -162,6 +164,14 @@ function setActivePills() {
     group.querySelectorAll("[data-home-range]").forEach(pill => {
       pill.classList.toggle("active", pill.dataset.homeRange === activePills[module]);
     });
+  });
+
+  // "Voir tout" links follow the module's active period pill.
+  document.querySelectorAll("[data-see-all]").forEach(link => {
+    const module = link.dataset.seeAll;
+    if (LIST_TYPE_BY_MODULE[module] && activePills[module]) {
+      link.href = `#list/${LIST_TYPE_BY_MODULE[module]}?range=${activePills[module]}`;
+    }
   });
 }
 

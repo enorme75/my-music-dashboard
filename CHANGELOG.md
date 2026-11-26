@@ -2,6 +2,16 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.2.0] - 2026-11-26 — pages « Voir tout » pour tous les modules top
+
+### Added
+- **Lien « Voir tout » sur chaque module top** (albums / artistes / morceaux), sur toutes les pages : l'accueil (le lien suit la pilule de période active du module), les pages Statistiques mois/année/tout (le lien suit le filtre année/mois actif) et la page artiste (top titres filtré par artiste). Ces liens ouvrent une **page de liste dédiée** `#list/{albums|artists|tracks}` avec pilules Jour/Semaine/Mois/Année/Tout (ou selects année/mois selon le contexte d'origine), le nombre total d'entrées, et une pagination « Voir plus » par pages de 50. Les lignes sont cliquables comme partout (page artiste/album/titre, lien ListenBrainz, bouton ▶).
+- **Nouveau endpoint `GET /api/top-list?type=artists|albums|tracks`** avec les mêmes filtres que le dashboard (`range` / `year`+`month` / `tzOffset`), plus `artist` (top d'un artiste) et `limit`/`offset` (défaut 50, max 200) : renvoie `items` (avec image enrichie, durée totale pour les morceaux et URL ListenBrainz par ligne), `total`, `hasMore`. Validation stricte (400 `invalid_type` / filtre invalide).
+- Le titre « Top Albums » de la page Statistiques passe par i18n au passage (`common.topAlbums`).
+
+### Tests
+- 7 nouveaux tests `test/topLists.test.js` (pagination, filtres période/artiste, groupements) : 127/127 OK, `npm run check` OK (117 fichiers). Endpoint vérifié en live contre la vraie base : `range=year` → total 2 967 artistes, filtre `artist=Radiohead` OK, `offset` OK, 400 sur type/range invalides.
+
 ## [3.1.0] - 2026-11-26 — logo ListenBrainz + bios/visuels artistes résolus par MBID
 
 ### Changed

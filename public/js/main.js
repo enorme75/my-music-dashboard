@@ -32,6 +32,7 @@ import { loadArtist, showArtist, getCurrentArtist } from "./artistPage.js";
 import { loadAlbum, showAlbum, getCurrentAlbum } from "./albumPage.js";
 import { loadSearch, showSearch, getCurrentSearch } from "./search.js";
 import { loadTrack, showTrack, getCurrentTrack } from "./trackPage.js";
+import { loadList, parseListHash } from "./topList.js";
 import { initLightbox } from "./lightbox.js";
 import { initPlayer } from "./player.js";
 
@@ -285,6 +286,16 @@ function renderStatsTimelines(data) {
   timeline.render(data[timeline.key] || [], onTimelinePeriod);
 }
 
+function updateStatsSeeAll() {
+  const params = new URLSearchParams(buildStatsQuery());
+  params.delete("tzOffset");
+  const qs = params.toString();
+  for (const type of ["albums", "artists", "tracks"]) {
+    const link = document.getElementById(`stats-see-all-${type}`);
+    if (link) link.href = `#list/${type}${qs ? `?${qs}` : ""}`;
+  }
+}
+
 function renderDashboard(data) {
   lastStatsData = data;
   renderSummary(data.summary);
@@ -294,6 +305,7 @@ function renderDashboard(data) {
   renderStatsTimelines(data);
   renderListeningClock(data.listeningClock);
   renderDashboardCacheState(data.cache);
+  updateStatsSeeAll();
 }
 
 async function reloadDashboardData({ skipSyncRefresh = false } = {}) {
@@ -375,6 +387,9 @@ function toggleView(viewName) {
   if (viewName !== "track" && viewName !== "artist" && viewName !== "album" && viewName !== "search" && location.hash.startsWith("#track/")) {
     history.replaceState(null, "", location.pathname + location.search);
   }
+  if (viewName !== "list" && location.hash.startsWith("#list/")) {
+    history.replaceState(null, "", location.pathname + location.search);
+  }
   localStorage.setItem("activeView", viewName);
 
   UI.sidebarButtons.forEach(button => {
@@ -422,6 +437,9 @@ function toggleView(viewName) {
     case "search":
       loadSearch(getCurrentSearch());
       break;
+    case "list":
+      loadList();
+      break;
     case "track": {
       const current = getCurrentTrack();
       if (current) {
@@ -460,6 +478,10 @@ function parseTrackHash() {
   return match
     ? { artist: decodeURIComponent(match[1]), track: decodeURIComponent(match[2]) }
     : null;
+}
+
+function parseLocalListHash() {
+  return parseListHash();
 }
 
 function initArtistRouting() {
@@ -510,6 +532,12 @@ function initArtistRouting() {
     if (search) {
       loadSearch(search);
       toggleView("search");
+      return;
+    }
+
+    const list = parseLocalListHash();
+    if (list) {
+      toggleView("list");
       return;
     }
 
@@ -626,6 +654,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const albumFromHash = parseAlbumHash();
   const searchFromHash = parseSearchHash();
   const artistFromHash = parseArtistHash();
+  const listFromHash = parseLocalListHash();
   const savedView = trackFromHash
     ? "track"
     : albumFromHash
@@ -634,7 +663,9 @@ document.addEventListener("DOMContentLoaded", () => {
         ? "search"
         : artistFromHash
           ? "artist"
-          : localStorage.getItem("activeView") || "home";
+          : listFromHash
+            ? "list"
+            : localStorage.getItem("activeView") || "home";
 
   toggleView(savedView);
   if (trackFromHash) loadTrack(trackFromHash.artist, trackFromHash.track);

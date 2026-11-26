@@ -143,6 +143,16 @@ const DICTIONARY = {
     loadError: { fr: "Erreur de chargement de l'accueil", en: "Error loading the home page" },
     topsError: { fr: "Erreur de chargement des tops", en: "Error loading top lists" }
   },
+  list: {
+    eyebrow: { fr: "Classement", en: "Chart" },
+    pillAll: { fr: "Tout", en: "All" },
+    more: { fr: "Voir plus", en: "Load more" },
+    empty: { fr: "Aucun résultat pour ce filtre", en: "No results for this filter" },
+    loadError: { fr: "Erreur de chargement de la liste", en: "Could not load the list" },
+    unitArtists: { fr: "artistes", en: "artists" },
+    unitAlbums: { fr: "albums", en: "albums" },
+    unitTracks: { fr: "morceaux", en: "tracks" }
+  },
   insights: {
     title: { fr: "Analyses", en: "Insights" },
     activity: { fr: "Activité (12 derniers mois)", en: "Activity (last 12 months)" },

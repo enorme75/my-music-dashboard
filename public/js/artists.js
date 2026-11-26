@@ -1,7 +1,7 @@
 import { t } from "./i18n.js";
 import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
 
-function artistRow(artist, index) {
+export function artistRow(artist, index) {
   return `
     <div class="top-row" data-artist="${escapeAttribute(artist.artist)}">
       <span class="rank">${index + 1}</span>

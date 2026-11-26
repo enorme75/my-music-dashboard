@@ -70,7 +70,7 @@ function songPodiumItem(row, index) {
   `;
 }
 
-function songRow(row, index) {
+export function songRow(row, index) {
   return `
     <div class="top-song-row">
       <span class="song-position">${index + 1}</span>
