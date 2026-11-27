@@ -2,6 +2,14 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.2.4] - 2026-11-27 — fix taille des pochettes dans la liste « Voir tout » albums
+
+### Fixed
+- `.cover` seul n'avait **aucune taille en CSS** (seul `.cover.artist` est à 40 px) → les pochettes de `albumRow` (`#list/albums`) s'affichaient en taille réelle. Nouvelle classe `.cover.list-cover` : 40×40, `object-fit: cover`, radius 6 px.
+
+### Tests
+- 127/127 OK, `npm run check` OK (117 fichiers).
+
 ## [3.2.3] - 2026-11-27 — page « Voir tout » albums en liste verticale (ISO artistes/tracks)
 
 ### Changed
