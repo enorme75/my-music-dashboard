@@ -107,12 +107,26 @@ function renderShell(type, params) {
   document.getElementById("list-empty")?.classList.add("d-none");
 }
 
+function renderHeader() {
+  const header = document.getElementById("list-items-header");
+  if (!header) return;
+
+  if (current.type === "artists") {
+    header.className = "list-header cols-artist";
+    header.innerHTML = `<span>#</span><span></span><span>${t("list.colArtist")}</span><span>${t("dashboard.playsHeader")}</span>`;
+  } else if (current.type === "tracks") {
+    header.className = "list-header cols-track";
+    header.innerHTML = `<span>#</span><span>${t("dashboard.songArtistHeader")}</span><span>${t("dashboard.playsHeader")}</span><span>Total</span>`;
+  } else {
+    header.className = "list-header d-none";
+  }
+}
+
 function renderItems() {
   const container = document.getElementById("list-items");
-  const header = document.getElementById("list-items-header");
   if (!container) return;
 
-  header?.classList.toggle("d-none", current.type !== "tracks");
+  renderHeader();
 
   if (current.type === "albums") {
     container.className = "albums-scroll";
@@ -121,10 +135,10 @@ function renderItems() {
   }
 
   if (current.type === "artists") {
-    container.className = "top-list top-rest";
+    container.className = "top-list list-full";
     container.innerHTML = items.map((row, index) => artistRow(row, index)).join("");
   } else {
-    container.className = "top-songs-list";
+    container.className = "top-songs-list list-full";
     container.innerHTML = items.map((row, index) => songRow(row, index)).join("");
   }
   installImageFallbacks(container);

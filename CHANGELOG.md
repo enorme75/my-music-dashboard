@@ -2,6 +2,14 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.2.2] - 2026-11-26 — page « Voir tout » artistes en liste verticale pleine page
+
+### Changed
+- La page `#list/artists` n'utilise plus le conteneur `.top-list top-rest` (limité à 480 px avec scroll interne) : la liste prend **toute la hauteur de la page** (classe `.list-full`), comme les autres pages « Voir tout ». Un **header de colonnes** est affiché au-dessus (rang / visuel / Artiste / Écoutes), rempli dynamiquement selon le type (artistes ou morceaux). La page albums reste en cartes horizontales en attendant (voir backlog DEV-NOTES).
+
+### Tests
+- 127/127 OK, `npm run check` OK. Fichiers servis vérifiés (header dynamique, classes `list-full`/`cols-*`, clé i18n `list.colArtist`). Non re-testé en navigateur (Crest fermé en fin de session).
+
 ## [3.2.1] - 2026-11-26 — fix pagination « Voir plus » + listes en réponse instantanée
 
 ### Fixed

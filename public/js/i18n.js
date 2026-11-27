@@ -145,6 +145,7 @@ const DICTIONARY = {
   },
   list: {
     eyebrow: { fr: "Classement", en: "Chart" },
+    colArtist: { fr: "Artiste", en: "Artist" },
     pillAll: { fr: "Tout", en: "All" },
     more: { fr: "Voir plus", en: "Load more" },
     empty: { fr: "Aucun résultat pour ce filtre", en: "No results for this filter" },
