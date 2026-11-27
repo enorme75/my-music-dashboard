@@ -1,9 +1,7 @@
 import { fetchJSON } from "./api.js";
 import { t } from "./i18n.js";
-import { albumRow } from "./albums.js";
-import { artistRow } from "./artists.js";
-import { songRow } from "./topSongs.js";
-import { installImageFallbacks } from "./dom.js";
+import { escapeAttribute, escapeHTML, installImageFallbacks, safeImageUrl } from "./dom.js";
+import { playButtonHtml } from "./player.js";
 import { showToast } from "./toast.js";
 
 // Full "top" list pages reached through the "Voir tout" links:
@@ -21,6 +19,129 @@ const TYPE_UNIT_KEY = {
   albums: "list.unitAlbums",
   artists: "list.unitArtists",
   tracks: "list.unitTracks"
+};
+const TYPE_COL_KEY = {
+  albums: "list.colAlbum",
+  artists: "list.colArtist",
+  tracks: "list.colTrack"
+};
+
+// ---------------------------------------------------------------------------
+// Unified list rows: one grid for all three types (#, 40px thumbnail, meta,
+// plays). The play count always lives in the right-hand column; the
+// ListenBrainz link sits inline next to the title (always visible here, not
+// hover-only like on the dashboard) and the play button (tracks only) stays
+// on the title line. The dashboard's "Total" duration column is dropped on
+// this page: the value is not reliable there.
+// ---------------------------------------------------------------------------
+
+function lbLink(url, title) {
+  return `
+    <a
+      class="music-link lb-link"
+      href="${escapeAttribute(url || "#")}"
+      target="_blank"
+      rel="noopener noreferrer"
+      title="${escapeAttribute(title)}"
+    >
+      <i class="mdi mdi-open-in-new"></i>
+    </a>
+  `;
+}
+
+function playsCell(value) {
+  return `<span class="list-plays">${Number(value).toLocaleString()}</span>`;
+}
+
+function artistSubLink(name) {
+  return `<a class="list-sub" href="#artist/${encodeURIComponent(name)}" title="${escapeAttribute(t("artist.viewPage"))}">${escapeHTML(name)}</a>`;
+}
+
+function listArtistRow(artist, index) {
+  return `
+    <div class="list-row" data-artist="${escapeAttribute(artist.artist)}">
+      <span class="rank">${index + 1}</span>
+      <img
+        src="${escapeAttribute(safeImageUrl(artist.image))}"
+        alt="${escapeAttribute(artist.artist)}"
+        class="list-thumb round"
+        loading="lazy"
+        decoding="async"
+        data-fallback="/images/artist-placeholder.png"
+      />
+      <div class="list-meta">
+        <div class="list-title-line">
+          <strong class="list-title">${escapeHTML(artist.artist)}</strong>
+          ${lbLink(artist.url, t("dashboard.openArtistOnListenbrainz"))}
+        </div>
+      </div>
+      ${playsCell(artist.plays)}
+    </div>
+  `;
+}
+
+function listAlbumRow(album, index) {
+  return `
+    <div class="list-row" data-album-artist="${escapeAttribute(album.artist)}" data-album-name="${escapeAttribute(album.album)}">
+      <span class="rank">${index + 1}</span>
+      <img
+        src="${escapeAttribute(safeImageUrl(album.album_image, "/images/cover-placeholder.svg"))}"
+        alt="${escapeAttribute(album.album)}"
+        class="list-thumb"
+        loading="lazy"
+        decoding="async"
+        data-fallback="/images/cover-placeholder.svg"
+      />
+      <div class="list-meta">
+        <div class="list-title-line">
+          <strong class="list-title">${escapeHTML(album.album)}</strong>
+          ${lbLink(album.url, t("dashboard.openAlbumOnListenbrainz"))}
+        </div>
+        ${artistSubLink(album.artist)}
+      </div>
+      ${playsCell(album.plays)}
+    </div>
+  `;
+}
+
+function listTrackRow(row, index) {
+  const coverAttrs = row.album
+    ? `data-album-artist="${escapeAttribute(row.artist)}" data-album-name="${escapeAttribute(row.album)}"`
+    : "";
+  return `
+    <div class="list-row">
+      <span class="rank">${index + 1}</span>
+      <img
+        src="${escapeAttribute(safeImageUrl(row.album_image, "/images/cover-placeholder.svg"))}"
+        alt="${escapeAttribute(row.album || row.track)}"
+        class="list-thumb"
+        ${coverAttrs}
+        loading="lazy"
+        decoding="async"
+        data-fallback="/images/cover-placeholder.svg"
+      />
+      <div class="list-meta">
+        <div class="list-title-line">
+          <strong
+            class="list-title"
+            data-track-artist="${escapeAttribute(row.artist)}"
+            data-track-name="${escapeAttribute(row.track)}"
+            title="${escapeAttribute(t("track.viewPage"))}"
+          >${escapeHTML(row.track)}</strong>
+          ${lbLink(row.url, t("dashboard.openTrackOnListenbrainz"))}
+          ${playButtonHtml(row.artist, row.track)}
+        </div>
+        ${artistSubLink(row.artist)}
+      </div>
+      ${playsCell(row.plays)}
+    </div>
+  `;
+}
+
+const ROW_BUILDERS = {
+  albums: listAlbumRow,
+  artists: listArtistRow,
+  tracks: listTrackRow
 };
 const MONTH_KEYS = [
   "jan", "feb", "mar", "apr", "may", "jun",
@@ -109,38 +230,20 @@ function renderShell(type, params) {
 
 function renderHeader() {
   const header = document.getElementById("list-items-header");
-  if (!header) return;
+  if (!header || !current) return;
 
-  if (current.type === "artists") {
-    header.className = "list-header cols-row";
-    header.innerHTML = `<span>#</span><span></span><span>${t("list.colArtist")}</span><span>${t("dashboard.playsHeader")}</span>`;
-  } else if (current.type === "albums") {
-    header.className = "list-header cols-row";
-    header.innerHTML = `<span>#</span><span></span><span>${t("list.colAlbum")}</span><span>${t("dashboard.playsHeader")}</span>`;
-  } else if (current.type === "tracks") {
-    header.className = "list-header cols-track";
-    header.innerHTML = `<span>#</span><span>${t("dashboard.songArtistHeader")}</span><span>${t("dashboard.playsHeader")}</span><span>Total</span>`;
-  } else {
-    header.className = "list-header d-none";
-  }
+  header.className = "list-header cols-list";
+  header.innerHTML = `<span>#</span><span></span><span>${t(TYPE_COL_KEY[current.type])}</span><span class="num">${t("dashboard.playsHeader")}</span>`;
 }
 
 function renderItems() {
   const container = document.getElementById("list-items");
-  if (!container) return;
+  if (!container || !current) return;
 
   renderHeader();
 
-  if (current.type === "albums") {
-    container.className = "top-list list-full";
-    container.innerHTML = items.map((row, index) => albumRow(row, index)).join("");
-  } else if (current.type === "artists") {
-    container.className = "top-list list-full";
-    container.innerHTML = items.map((row, index) => artistRow(row, index)).join("");
-  } else {
-    container.className = "top-songs-list list-full";
-    container.innerHTML = items.map((row, index) => songRow(row, index)).join("");
-  }
+  container.className = "list-rows list-full";
+  container.innerHTML = items.map((row, index) => ROW_BUILDERS[current.type](row, index)).join("");
   installImageFallbacks(container);
 }
 

@@ -2,6 +2,18 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.2.5] - 2026-11-27 — toilettage unifié des pages « Voir tout » (listes albums/artistes/morceaux)
+
+### Changed
+- **Une seule grille pour les 3 pages liste** (`#list/albums|artists|tracks`) : `# / vignette 40 px / métadonnées / Écoutes` (`.list-header.cols-list` + `.list-row`, `28px 40px minmax(0,1fr) 80px`). Les lignes ne sont plus décalées entre elles : ligne 1 = titre + lien ListenBrainz + (morceaux) bouton play, ligne 2 = artiste.
+- **Lien ListenBrainz toujours visible** dans les listes (`.lb-link .mdi-open-in-new` opacité 0,55 au lieu de 0 jusqu'au survol), orange au survol.
+- **Écoutes toujours dans la colonne de droite** (`.list-plays`, alignée à droite, chiffres tabulaires) pour les 3 types — la colonne n'est plus vide sur albums/artistes ; le `<small>` « N écoutes » à côté de la pochette est supprimé.
+- **Colonne « Total » supprimée de `#list/tracks`** (valeur peu fiable) ; nouveau libellé d'en-tête `list.colTrack` (« Morceau »).
+- Builders dédiés `listArtistRow`/`listAlbumRow`/`listTrackRow` dans `topList.js` (le dashboard garde ses propres lignes `artistRow`/`songRow` inchangées) ; `albumRow` supprimé d'`albums.js`. Comportements conservés : ligne album → page album, pochette morceau → page album, titre morceau → page morceau, artiste → `#artist/…`, bouton play fonctionnel.
+
+### Tests
+- 127/127 OK, `npm run check` OK (117 fichiers), syntaxe ESM vérifiée, rendu des lignes validé hors navigateur (stubs Node).
+
 ## [3.2.4] - 2026-11-27 — fix taille des pochettes dans la liste « Voir tout » albums
 
 ### Fixed

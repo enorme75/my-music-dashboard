@@ -3181,20 +3181,122 @@ strong {
   margin-bottom: 6px;
 }
 
-.list-header.cols-row {
-  grid-template-columns: 24px 40px 1fr auto;
+/* Unified full-page list rows (#list/albums|artists|tracks): one grid for all
+   three types — rank, 40px thumbnail, meta (title line + sub line), plays. */
+.list-header.cols-list,
+.list-row {
+  display: grid;
+  grid-template-columns: 28px 40px minmax(0, 1fr) 80px;
+  gap: 12px;
+  align-items: center;
 }
 
-/* Square cover thumbnail for vertical list rows (albumRow in #list/albums). */
-.cover.list-cover {
+.list-rows {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  color: #eaeaea;
+}
+
+.list-row {
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.list-row:last-child {
+  border-bottom: none;
+}
+
+.list-row .rank {
+  color: var(--text-rank);
+  font-size: 0.9rem;
+}
+
+.list-thumb {
   width: 40px;
   height: 40px;
   object-fit: cover;
   border-radius: 6px;
 }
 
-.list-header.cols-track {
-  grid-template-columns: 40px 1fr 80px 90px;
+.list-thumb.round {
+  border-radius: 50%;
+}
+
+.list-meta {
+  min-width: 0;
+}
+
+.list-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.list-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.list-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.list-sub:hover,
+.list-sub:focus-visible {
+  color: var(--brand-orange);
+  text-decoration: none;
+}
+
+.list-plays,
+.list-header .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ListenBrainz link: always visible in list rows (hover-only on the dashboard). */
+.lb-link {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px;
+  color: var(--text-muted);
+}
+
+.lb-link .mdi-open-in-new {
+  margin-left: 0;
+  font-size: 0.85rem;
+  opacity: 0.55;
+  transition: opacity var(--transition-fast);
+}
+
+.lb-link:hover,
+.lb-link:focus-visible {
+  color: var(--brand-orange);
+}
+
+.lb-link:hover .mdi-open-in-new,
+.lb-link:focus-visible .mdi-open-in-new {
+  opacity: 1;
+}
+
+.list-title-line .play-btn {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-left: 0;
 }
 
 .home-module.is-loading {
