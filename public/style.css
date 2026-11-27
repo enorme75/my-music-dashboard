@@ -3181,7 +3181,7 @@ strong {
   margin-bottom: 6px;
 }
 
-.list-header.cols-artist {
+.list-header.cols-row {
   grid-template-columns: 24px 40px 1fr auto;
 }
 

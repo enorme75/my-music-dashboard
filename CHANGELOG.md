@@ -2,6 +2,14 @@
 
 All notable changes to My Music Dashboard are documented in this file.
 
+## [3.2.3] - 2026-11-27 — page « Voir tout » albums en liste verticale (ISO artistes/tracks)
+
+### Changed
+- La page `#list/albums` n'est plus un carrousel horizontal de cartes : c'est une **liste verticale pleine page** comme artistes et morceaux — nouvelle ligne `albumRow()` exportée depuis `albums.js` (rang, pochette 40 px, titre + lien ListenBrainz + nom d'artiste + écoutes). La ligne ouvre la page album (`data-album-artist`), le nom d'artiste ouvre la page artiste (vrai lien `#artist/…` pour passer outre la priorité du handler de ligne). Header de colonnes « # / visuel / Album / Écoutes » (`.list-header.cols-row`, clé i18n `list.colAlbum`).
+
+### Tests
+- 127/127 OK, `npm run check` OK (117 fichiers). Fichiers servis vérifiés en local (marqueurs `albumRow`/`cols-row`/`colAlbum` présents).
+
 ## [3.2.2] - 2026-11-26 — page « Voir tout » artistes en liste verticale pleine page
 
 ### Changed

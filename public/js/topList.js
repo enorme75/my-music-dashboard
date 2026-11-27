@@ -1,6 +1,6 @@
 import { fetchJSON } from "./api.js";
 import { t } from "./i18n.js";
-import { renderAlbums } from "./albums.js";
+import { albumRow } from "./albums.js";
 import { artistRow } from "./artists.js";
 import { songRow } from "./topSongs.js";
 import { installImageFallbacks } from "./dom.js";
@@ -112,8 +112,11 @@ function renderHeader() {
   if (!header) return;
 
   if (current.type === "artists") {
-    header.className = "list-header cols-artist";
+    header.className = "list-header cols-row";
     header.innerHTML = `<span>#</span><span></span><span>${t("list.colArtist")}</span><span>${t("dashboard.playsHeader")}</span>`;
+  } else if (current.type === "albums") {
+    header.className = "list-header cols-row";
+    header.innerHTML = `<span>#</span><span></span><span>${t("list.colAlbum")}</span><span>${t("dashboard.playsHeader")}</span>`;
   } else if (current.type === "tracks") {
     header.className = "list-header cols-track";
     header.innerHTML = `<span>#</span><span>${t("dashboard.songArtistHeader")}</span><span>${t("dashboard.playsHeader")}</span><span>Total</span>`;
@@ -129,12 +132,9 @@ function renderItems() {
   renderHeader();
 
   if (current.type === "albums") {
-    container.className = "albums-scroll";
-    renderAlbums(items, "list-items");
-    return;
-  }
-
-  if (current.type === "artists") {
+    container.className = "top-list list-full";
+    container.innerHTML = items.map((row, index) => albumRow(row, index)).join("");
+  } else if (current.type === "artists") {
     container.className = "top-list list-full";
     container.innerHTML = items.map((row, index) => artistRow(row, index)).join("");
   } else {
