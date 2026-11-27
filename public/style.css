@@ -3185,6 +3185,14 @@ strong {
   grid-template-columns: 24px 40px 1fr auto;
 }
 
+/* Square cover thumbnail for vertical list rows (albumRow in #list/albums). */
+.cover.list-cover {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
 .list-header.cols-track {
   grid-template-columns: 40px 1fr 80px 90px;
 }

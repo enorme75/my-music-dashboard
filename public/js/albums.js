@@ -13,7 +13,7 @@ export function albumRow(album, index) {
       <img
         src="${escapeAttribute(safeImageUrl(album.album_image, "/images/cover-placeholder.svg"))}"
         alt="${escapeAttribute(album.album)}"
-        class="cover"
+        class="cover list-cover"
         loading="lazy"
         decoding="async"
         data-fallback="/images/cover-placeholder.svg"
